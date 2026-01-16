@@ -49,11 +49,16 @@ export class SyncManager {
         fs.writeFileSync(this.stateFile, JSON.stringify({ lastSync: date }));
     }
 
-    async syncAllProducts() {
-        // ... (remains unchanged)
-        console.log('Starting sync...');
-        const lastSync = this.getLastSync();
-        console.log(`Last sync was: ${lastSync || 'Never'}`);
+    async syncAllProducts(forceFull: boolean = false) {
+        console.log(`Starting sync... (Force Full: ${forceFull})`);
+
+        let lastSync: string | undefined = undefined;
+        if (!forceFull) {
+            lastSync = this.getLastSync();
+            console.log(`Last sync was: ${lastSync || 'Never'}`);
+        } else {
+            console.log('Forcing full sync - ignoring last sync timestamp.');
+        }
 
         try {
             const products = await this.aqClient.getProducts(lastSync);

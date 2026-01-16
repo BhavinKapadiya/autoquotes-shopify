@@ -75,7 +75,11 @@ export default function Home() {
     setLoading(true);
     setStatus('Starting sync...');
     try {
-      const res = await authFetch('/api/sync', { method: 'POST' });
+      const res = await authFetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: true })
+      });
       const data = await res.json();
       setStatus(`Sync Initiated: ${data.status}`);
     } catch (err) {

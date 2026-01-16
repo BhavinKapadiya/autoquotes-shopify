@@ -62,8 +62,9 @@ app.get('/', (req, res) => {
 
 // Trigger Sync
 app.post('/api/sync', async (req, res) => {
-    res.send({ status: 'Sync started' });
-    syncManager.syncAllProducts().catch(err => console.error(err));
+    const { force } = req.body;
+    res.send({ status: `Sync started (Full: ${!!force})` });
+    syncManager.syncAllProducts(!!force).catch(err => console.error(err));
 });
 
 // Get Pricing Rules
