@@ -24,6 +24,10 @@ export default function Home() {
 
   // Helper for Authenticated Requests using App Bridge v4
   const authFetch = async (url: string, options: RequestInit = {}) => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://autoquotes-shopify.onrender.com';
+    // Ensure url starts with / if it's a relative path, or handle full URLs
+    const fullUrl = url.startsWith('http') ? url : `${backendUrl}${url}`;
+
     try {
       let token = '';
       if (typeof window !== 'undefined' && window.shopify && window.shopify.id) {
@@ -38,7 +42,7 @@ export default function Home() {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       };
-      return fetch(url, { ...options, headers });
+      return fetch(fullUrl, { ...options, headers });
     } catch (error) {
       console.error("Auth Token Error:", error);
       throw error;
@@ -47,7 +51,7 @@ export default function Home() {
 
   const fetchRules = async () => {
     try {
-      const res = await authFetch('http://localhost:5000/api/pricing/rules');
+      const res = await authFetch('/api/pricing/rules');
       if (res.ok) {
         const data = await res.json();
         setRules(Array.isArray(data) ? data : []);
@@ -71,7 +75,7 @@ export default function Home() {
     setLoading(true);
     setStatus('Starting sync...');
     try {
-      const res = await authFetch('http://localhost:5000/api/sync', { method: 'POST' });
+      const res = await authFetch('/api/sync', { method: 'POST' });
       const data = await res.json();
       setStatus(`Sync Initiated: ${data.status}`);
     } catch (err) {
@@ -83,7 +87,7 @@ export default function Home() {
   const updateRule = async () => {
     if (!manufacturer || !markup) return;
     try {
-      await authFetch('http://localhost:5000/api/pricing/rules', {
+      await authFetch('/api/pricing/rules', {
         method: 'POST',
         body: JSON.stringify({ manufacturer, markup: Number(markup) }),
       });
