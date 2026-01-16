@@ -2,6 +2,14 @@
 
 import { useState, useEffect } from 'react';
 
+// App Bridge v4 uses the global `shopify` object when embedded.
+// We declare it here for TS.
+declare global {
+  interface Window {
+    shopify?: any;
+  }
+}
+
 interface PricingRule {
   manufacturer: string;
   markupPercentage: number;
@@ -14,17 +22,48 @@ export default function Home() {
   const [status, setStatus] = useState('');
   const [rules, setRules] = useState<PricingRule[]>([]);
 
+  // Helper for Authenticated Requests using App Bridge v4
+  const authFetch = async (url: string, options: RequestInit = {}) => {
+    try {
+      let token = '';
+      if (typeof window !== 'undefined' && window.shopify && window.shopify.id) {
+        token = await window.shopify.id.getSessionToken();
+      } else {
+        // Fallback for local testing outside Shopify (optional)
+        console.warn('Not in Shopify iframe, skipping token');
+      }
+
+      const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+      return fetch(url, { ...options, headers });
+    } catch (error) {
+      console.error("Auth Token Error:", error);
+      throw error;
+    }
+  };
+
   const fetchRules = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/pricing/rules');
-      const data = await res.json();
-      setRules(Array.isArray(data) ? data : []);
+      const res = await authFetch('http://localhost:5000/api/pricing/rules');
+      if (res.ok) {
+        const data = await res.json();
+        setRules(Array.isArray(data) ? data : []);
+      }
     } catch (err) {
       console.error('Failed to fetch rules', err);
     }
   };
 
   useEffect(() => {
+    // Check if we are embedded
+    if (typeof window !== 'undefined' && !window.shopify) {
+      // We might want to inject the script if it's missing, but for now just warn
+      // <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+      // In Next.js App Router we should theoretically put this in layout `head`.
+    }
     fetchRules();
   }, []);
 
@@ -32,7 +71,7 @@ export default function Home() {
     setLoading(true);
     setStatus('Starting sync...');
     try {
-      const res = await fetch('http://localhost:5000/api/sync', { method: 'POST' });
+      const res = await authFetch('http://localhost:5000/api/sync', { method: 'POST' });
       const data = await res.json();
       setStatus(`Sync Initiated: ${data.status}`);
     } catch (err) {
@@ -44,9 +83,8 @@ export default function Home() {
   const updateRule = async () => {
     if (!manufacturer || !markup) return;
     try {
-      await fetch('http://localhost:5000/api/pricing/rules', {
+      await authFetch('http://localhost:5000/api/pricing/rules', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ manufacturer, markup: Number(markup) }),
       });
       setStatus(`Rule updated for ${manufacturer}`);
@@ -60,6 +98,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gray-50 text-gray-900 font-sans">
+      <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key={process.env.NEXT_PUBLIC_SHOPIFY_API_KEY}></script>
       <div className="max-w-5xl mx-auto py-12 px-6">
         <header className="mb-10 flex justify-between items-center">
           <div>

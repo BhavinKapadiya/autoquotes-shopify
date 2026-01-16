@@ -12,6 +12,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@shopify/shopify-api": "^12.3.0",
+    "@shopify/shopify-app-express": "^6.0.5",
     "axios": "^1.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
