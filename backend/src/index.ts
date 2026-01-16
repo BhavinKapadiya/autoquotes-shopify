@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { shopifyApp } from '@shopify/shopify-app-express';
-import { LATEST_API_VERSION, LogSeverity } from '@shopify/shopify-api';
+import { ApiVersion, LogSeverity } from '@shopify/shopify-api';
 
 dotenv.config();
 
@@ -24,7 +24,7 @@ const shopify = shopifyApp({
         apiSecretKey: process.env.SHOPIFY_API_SECRET,
         scopes: ['read_products', 'write_products'],
         hostName: process.env.HOST?.replace(/https?:\/\//, '') || 'localhost:5000',
-        apiVersion: LATEST_API_VERSION,
+        apiVersion: ApiVersion.October24,
         isEmbeddedApp: true,
     },
     auth: {
