@@ -1,0 +1,8 @@
+{% comment %}
+  Renders the price. No calculations here.
+  Backend ensures 'price' is the final selling price.
+{% endcomment %}
+
+<span class="price-item price-item--regular">
+  {{ product.price | money }}
+</span>

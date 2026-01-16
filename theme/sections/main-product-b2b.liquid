@@ -1,0 +1,63 @@
+<div class="product-b2b-container">
+  <div class="product-gallery">
+    <!-- Basic Gallery Implementation -->
+    {% for media in product.media %}
+      <img src="{{ media | image_url: width: 600 }}" alt="{{ media.alt }}">
+    {% endfor %}
+  </div>
+
+  <div class="product-details">
+    <h1>{{ product.title }}</h1>
+    <p class="product-sku">Model: {{ product.metafields.custom.model_number }}</p>
+
+    <!-- Pricing Display (No calculation) -->
+    <div class="product-price">
+      {% render 'price-display', product: product %}
+    </div>
+
+    <!-- Add to Cart (Simple Form) -->
+    {% form 'product', product %}
+      <select name="id">
+        {% for variant in product.variants %}
+          <option value="{{ variant.id }}">{{ variant.title }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">Add to Quote / Cart</button>
+    {% endform %}
+
+    <!-- Metafields: Spec Sheet -->
+    {% if product.metafields.custom.spec_sheet %}
+      <div class="spec-sheet-download">
+        <a href="{{ product.metafields.custom.spec_sheet.value }}" target="_blank" class="btn btn-secondary">
+          Download Spec Sheet
+        </a>
+      </div>
+    {% endif %}
+
+    <!-- Specifications Table -->
+    <div class="product-specs">
+      <h3>Specifications</h3>
+      <table>
+        <tr>
+            <th>Manufacturer</th>
+            <td>{{ product.vendor }}</td>
+        </tr>
+         <!-- Add more dynamic specs here if synced to metafields -->
+      </table>
+    </div>
+  </div>
+</div>
+
+<style>
+  .product-b2b-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    padding: 20px;
+  }
+  .product-price {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin: 20px 0;
+  }
+</style>
