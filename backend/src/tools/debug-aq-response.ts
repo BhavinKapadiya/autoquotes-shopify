@@ -42,6 +42,7 @@ async function debugResponse() {
                 console.log('✅ FOUND "FAT16" in API Response!');
                 console.log('Product Model:', target.models);
                 console.log('Product ID:', target.productId);
+                console.log('Manufacturer Name:', target.mfrName);
             } else {
                 console.log('❌ "FAT16" NOT FOUND in this list of 794 items.');
                 console.log('Sample item models:', data.data.slice(0, 3).map((p: any) => p.models));
