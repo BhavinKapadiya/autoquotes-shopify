@@ -100,7 +100,7 @@ export default function Home() {
   };
 
   function ManufacturerList() {
-    const filtered = manufacturers.filter(m => m.name.toLowerCase().includes(mfrSearch.toLowerCase()));
+    const filtered = manufacturers.filter(m => (m.name || '').toLowerCase().includes(mfrSearch.toLowerCase()));
     return (
       <div className="space-y-2">
         <input

@@ -65,8 +65,13 @@ export class AQClient {
     async getManufacturers(): Promise<{ id: string, name: string }[]> {
         try {
             const response = await this.client.get<any>('/manufacturers');
-            // The API likely returns { data: [ { id, name, ... } ] }
-            return response.data.data || [];
+            const raw = response.data?.data || [];
+
+            // Normalize data structure (API might use PascalCase or different field names)
+            return raw.map((m: any) => ({
+                id: m.id || m.Id || m.ManufacturerID || '',
+                name: m.name || m.Name || m.ManufacturerName || 'Unknown Manufacturer'
+            }));
         } catch (error) {
             console.error('Error fetching manufacturers from AQ:', error);
             // Fallback for demo/testing if API fails or is restricted
