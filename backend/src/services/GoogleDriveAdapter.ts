@@ -59,35 +59,40 @@ export class GoogleDriveAdapter {
             }
 
             return null;
-    async getAllImageModels(): Promise < string[] > {
-                if(!this.drive || !this.folderId) return [];
+        } catch (error) {
+            console.error(`Error searching Drive for ${modelNumber}:`, error);
+            return null;
+        }
+    }
 
-                try {
-                    const query = `'${this.folderId}' in parents and trshed = false`;
-                    const res = await this.drive.files.list({
-                        q: query,
-                        fields: 'files(name)',
-                        pageSize: 1000 // Reasonable limit for now
-                    });
+    async getAllImageModels(): Promise<string[]> {
+        if (!this.drive || !this.folderId) return [];
 
-                    const files = res.data.files;
-                    if(!files || files.length === 0) return [];
+        try {
+            const query = `'${this.folderId}' in parents and trashed = false`;
+            const res = await this.drive.files.list({
+                q: query,
+                fields: 'files(name)',
+                pageSize: 1000 // Reasonable limit for now
+            });
 
-                const models = files
-                    .map((f: any) => f.name)
-                    .filter((name: string) => name) // filter nulls
-                    .map((name: string) => {
-                        // Strip extension (e.g. FAT16.jpg -> FAT16)
-                        return name.replace(/\.[^/.]+$/, "");
-                    });
+            const files = res.data.files;
+            if (!files || files.length === 0) return [];
 
-                console.log(`Found ${models.length} image overrides in Drive.`);
-                return Array.from(new Set(models)); // Unique only
+            const models = files
+                .map((f: any) => f.name)
+                .filter((name: string) => name) // filter nulls
+                .map((name: string) => {
+                    // Strip extension (e.g. FAT16.jpg -> FAT16)
+                    return name.replace(/\.[^/.]+$/, "");
+                });
 
-            } catch (error) {
-                console.error('Error listing Drive files:', error);
-                return [];
-            }
+            console.log(`Found ${models.length} image overrides in Drive.`);
+            return Array.from(new Set(models)); // Unique only
+
+        } catch (error) {
+            console.error('Error listing Drive files:', error);
+            return [];
         }
     }
 }

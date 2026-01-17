@@ -96,11 +96,50 @@ export class SyncManager {
         }
 
         try {
+            // 1. Fetch Main List
             const products = await this.aqClient.getProducts(lastSync);
             console.log(`Fetched ${products.length} products from AQ.`);
 
+            const processedIds = new Set(products.map(p => p.productId));
+
+            // 2. Fetch User-Defined Models (Drive Images + Sheet Variants)
+            console.log('Checking for user-defined products (Images/Variants)...');
+            const driveModels = await this.googleDrive.getAllImageModels();
+            const sheetModels = await this.googleSheets.getAllVariantModels();
+
+            const userModels = new Set([...driveModels, ...sheetModels]);
+            console.log(`Found ${userModels.size} unique user-defined models.`);
+
+            // 3. Sync Main List
             for (const product of products) {
                 await this.syncProduct(product);
+                // Mark model as processed if we have it here
+                if (product.models?.mfrModel) {
+                    // We can't easily mark userModels as processed by ID, but we know this product is synced.
+                    // The next step checks by Model Number anyway (via smart search fallback), so it's fine.
+                }
+            }
+
+            // 4. Force Sync Missing User Models
+            // We iterate through user models. If they weren't in the main list (by checking if we synced them?), 
+            // actually 'products' is a list of objects. We need to check if a user model maps to one of these.
+            // Since we don't know the ID of user models yet, we have to rely on the fact that if it WAS in the list, 
+            // we already synced it. But wait, we might have synced it but not "known" it was a user model.
+            // A simpler approach: For every user model, check if we found a matching Model Number in the 'products' list.
+            // If NOT found in 'products' list, then we force sync it.
+
+            for (const model of userModels) {
+                const alreadySynced = products.find(p => p.models?.mfrModel === model || p.models?.mfrModel === model.trim());
+
+                if (!alreadySynced) {
+                    console.log(`User model '${model}' was missing from main list. Force syncing...`);
+                    try {
+                        // Use our smart search (which handles model -> ID lookup)
+                        await this.syncSpecificProduct(model);
+                    } catch (err) {
+                        console.error(`Failed to force sync user model '${model}':`, err);
+                    }
+                }
             }
 
             this.saveLastSync(new Date().toISOString());
