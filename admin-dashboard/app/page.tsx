@@ -15,6 +15,56 @@ interface PricingRule {
   markupPercentage: number;
 }
 
+// Extracted component to prevent re-renders losing focus
+function ManufacturerList({
+  manufacturers,
+  enabledMfrs,
+  mfrSearch,
+  setMfrSearch,
+  toggleMfr,
+  setManufacturer
+}: {
+  manufacturers: { id: string, name: string }[],
+  enabledMfrs: string[],
+  mfrSearch: string,
+  setMfrSearch: (s: string) => void,
+  toggleMfr: (id: string) => void,
+  setManufacturer: (name: string) => void
+}) {
+  const filtered = manufacturers.filter(m => (m.name || '').toLowerCase().includes(mfrSearch.toLowerCase()));
+  return (
+    <div className="space-y-2">
+      <input
+        type="text"
+        placeholder="Search Vendors..."
+        className="w-full text-sm p-2 border rounded mb-2"
+        value={mfrSearch}
+        onChange={e => setMfrSearch(e.target.value)}
+      />
+      {filtered.map(m => (
+        <div key={m.id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+          <span className="text-sm font-medium text-gray-700">{m.name}</span>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setManufacturer(m.name.toUpperCase())}
+              className="text-xs px-2 py-1 rounded border bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
+            >
+              Set Rule
+            </button>
+            <button
+              onClick={() => toggleMfr(m.id)}
+              className={`text-xs px-2 py-1 rounded border ${enabledMfrs.includes(m.id) ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-green-200'}`}
+            >
+              {enabledMfrs.includes(m.id) ? 'Active' : 'Enable'}
+            </button>
+          </div>
+        </div>
+      ))}
+      {filtered.length === 0 && <div className="text-xs text-gray-400 text-center py-2">No results</div>}
+    </div>
+  );
+}
+
 export default function Home() {
   const [loading, setLoading] = useState(false);
   const [manufacturer, setManufacturer] = useState('');
@@ -99,43 +149,6 @@ export default function Home() {
     });
   };
 
-  function ManufacturerList() {
-    const filtered = manufacturers.filter(m => (m.name || '').toLowerCase().includes(mfrSearch.toLowerCase()));
-    return (
-      <div className="space-y-2">
-        <input
-          type="text"
-          placeholder="Search Vendors..."
-          className="w-full text-sm p-2 border rounded mb-2"
-          value={mfrSearch}
-          onChange={e => setMfrSearch(e.target.value)}
-        />
-        {filtered.map(m => (
-          <div key={m.id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-            <span className="text-sm font-medium text-gray-700">{m.name}</span>
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setManufacturer(m.name.toUpperCase())}
-                className="text-xs px-2 py-1 rounded border bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
-              >
-                Set Rule
-              </button>
-              <button
-                onClick={() => toggleMfr(m.id)}
-                className={`text-xs px-2 py-1 rounded border ${enabledMfrs.includes(m.id) ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-green-200'}`}
-              >
-                {enabledMfrs.includes(m.id) ? 'Active' : 'Enable'}
-              </button>
-            </div>
-          </div>
-        ))}
-        {filtered.length === 0 && <div className="text-xs text-gray-400 text-center py-2">No results</div>}
-      </div>
-    );
-  }
-
-
-
   const triggerSync = async () => {
     setLoading(true);
     setStatus('Starting sync...');
@@ -178,6 +191,16 @@ export default function Home() {
             <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">AutoQuotes Sync Admin</h1>
             <p className="text-gray-500 mt-2">Manage your B2B pricing and sync status.</p>
           </div>
+          <div className="flex items-center space-x-4">
+            {status && <span className="text-sm font-medium text-gray-600 animate-pulse">{status}</span>}
+            <button
+              onClick={triggerSync}
+              disabled={loading}
+              className={`px-4 py-2 rounded-lg font-bold text-white shadow-sm transition-all transform hover:scale-105 active:scale-95 ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-black hover:bg-gray-800'}`}
+            >
+              {loading ? 'Syncing...' : 'Start Full Sync'}
+            </button>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -199,9 +222,14 @@ export default function Home() {
                     <div className="text-gray-500 text-sm p-2">Loading manufacturers...</div>
                   ) : (
                     <div className="space-y-2">
-                      {/* We will fetch this list dynamically. For now, placeholders or minimal logic needed */}
-                      {/* Actually, we need to fetch this data. I'll add a useEffect below or assume it's added. */}
-                      <ManufacturerList />
+                      <ManufacturerList
+                        manufacturers={manufacturers}
+                        enabledMfrs={enabledMfrs}
+                        mfrSearch={mfrSearch}
+                        setMfrSearch={setMfrSearch}
+                        toggleMfr={toggleMfr}
+                        setManufacturer={setManufacturer}
+                      />
                     </div>
                   )}
                 </div>
