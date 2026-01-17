@@ -71,8 +71,8 @@ export class AQClient {
             console.log('Raw Manufacturers Data:', JSON.stringify(raw.slice(0, 3))); // Log first few for debugging
 
             const mapped = raw.map((m: any) => ({
-                id: m.id || m.Id || m.ManufacturerID || m.manufacturerId || '',
-                name: m.name || m.Name || m.ManufacturerName || m.manufacturerName || 'Unknown'
+                id: m.id || m.mfrId || m.ManufacturerID || m.manufacturerId || '',
+                name: m.name || m.mfrName || m.ManufacturerName || m.manufacturerName || 'Unknown'
             })).filter((m: { id: string; name: string }) => m.id && m.name !== 'Unknown');
 
             // Ensure AARCO is always present (User Requirement)
