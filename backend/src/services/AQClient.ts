@@ -8,8 +8,8 @@ export class AQClient {
 
     constructor(apiKey: string) {
         this.apiKey = apiKey;
-        // Use env var or fallback (which is likely wrong, so user needs to update env)
-        this.baseUrl = process.env.AQ_API_URL || 'https://api.autoquotes.com/v1';
+        // Updated to new FES API endpoint provided by user
+        this.baseUrl = process.env.AQ_API_URL || 'https://api.aq-fes.com/products-api';
 
         this.client = axios.create({
             baseURL: this.baseUrl,
