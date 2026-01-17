@@ -125,6 +125,55 @@ export default function Home() {
           {/* Left Column: Controls */}
           <div className="space-y-8">
 
+            {/* Single Product Sync */}
+            <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                🎯 Sync Specific Product
+              </h2>
+              <p className="text-gray-600 mb-4 text-sm">
+                If a product is missing from the list (hidden/accessory), enter its <b>AutoQuotes ID</b> or <b>Model Number</b> (exact match) here.
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. FAT16 or FSH18"
+                  className="flex-1 border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2"
+                  id="singleSyncInput"
+                />
+                <button
+                  onClick={async () => {
+                    const input = document.getElementById('singleSyncInput') as HTMLInputElement;
+                    const val = input.value.trim();
+                    if (!val) return;
+
+                    setLoading(true);
+                    setStatus(`Syncing ${val}...`);
+                    try {
+                      const res = await authFetch('/api/sync/product', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ productId: val })
+                      });
+                      if (res.ok) {
+                        setStatus(`✅ Successfully synced ${val}`);
+                        input.value = '';
+                      } else {
+                        const err = await res.json();
+                        setStatus(`❌ Failed: ${err.error}`);
+                      }
+                    } catch (e) {
+                      setStatus('❌ Error connecting to server');
+                    }
+                    setLoading(false);
+                  }}
+                  disabled={loading}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
+                >
+                  Sync Item
+                </button>
+              </div>
+            </section>
+
             {/* Sync Control */}
             <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
               <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
