@@ -178,11 +178,6 @@ export default function Home() {
             <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">AutoQuotes Sync Admin</h1>
             <p className="text-gray-500 mt-2">Manage your B2B pricing and sync status.</p>
           </div>
-          <div className="text-right">
-            <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${loading ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
-              {loading ? 'Syncing...' : 'System Ready'}
-            </div>
-          </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
