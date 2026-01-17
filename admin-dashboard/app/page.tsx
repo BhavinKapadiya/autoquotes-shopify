@@ -205,96 +205,24 @@ export default function Home() {
               </div>
             </section>
 
-            {/* Single Product Sync */}
-            <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                🎯 Sync Specific Product
-              </h2>
-              <p className="text-gray-600 mb-4 text-sm">
-                If a product is missing from the list (hidden/accessory), enter its <b>AutoQuotes ID</b> or <b>Model Number</b> (exact match) here.
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="e.g. FAT16 or FSH18"
-                  className="flex-1 border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2"
-                  id="singleSyncInput"
-                />
-                <button
-                  onClick={async () => {
-                    const input = document.getElementById('singleSyncInput') as HTMLInputElement;
-                    const val = input.value.trim();
-                    if (!val) return;
-
-                    setLoading(true);
-                    setStatus(`Syncing ${val}...`);
-                    try {
-                      const res = await authFetch('/api/sync/product', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ productId: val })
-                      });
-                      if (res.ok) {
-                        setStatus(`✅ Successfully synced ${val}`);
-                        input.value = '';
-                      } else {
-                        const err = await res.json();
-                        setStatus(`❌ Failed: ${err.error}`);
-                      }
-                    } catch (e) {
-                      setStatus('❌ Error connecting to server');
-                    }
-                    setLoading(false);
-                  }}
-                  disabled={loading}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 font-medium"
-                >
-                  Sync Item
-                </button>
-              </div>
-            </section>
-
-            {/* Sync Control */}
-            <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                🔄 Sync Operations
-              </h2>
-              <p className="text-gray-600 mb-6 text-sm">
-                Trigger a manual sync to pull latest products from AutoQuotes, apply pricing rules, and push to Shopify.
-              </p>
-              <button
-                onClick={triggerSync}
-                disabled={loading}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors disabled:opacity-50 flex justify-center items-center"
-              >
-                {loading ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    Syncing in background...
-                  </>
-                ) : 'Start Full Sync'}
-              </button>
-              {status && (
-                <div className="mt-4 p-3 bg-gray-50 rounded text-sm text-gray-700 border border-gray-100">
-                  {status}
-                </div>
-              )}
-            </section>
-
             {/* Add Rule Form */}
             <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
               <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
                 ➕ Add Pricing Rule
               </h2>
+              <p className="text-sm text-gray-500 mb-4">
+                Select a manufacturer from the list above to auto-fill the name.
+              </p>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Manufacturer Code</label>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Manufacturer Name</label>
                   <input
                     type="text"
                     value={manufacturer}
-                    onChange={(e) => setManufacturer(e.target.value.toUpperCase())}
-                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2"
-                    placeholder="e.g. HOBART"
+                    onChange={(e) => setManufacturer(e.target.value)}
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 border p-2 bg-gray-50"
+                    placeholder="Select from list above..."
+                    readOnly={false}
                   />
                 </div>
                 <div>
