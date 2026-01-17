@@ -67,6 +67,22 @@ app.post('/api/sync', async (req, res) => {
     syncManager.syncAllProducts(!!force).catch(err => console.error(err));
 });
 
+// Sync Single Product
+app.post('/api/sync/product', async (req, res) => {
+    const { productId } = req.body;
+    if (!productId) {
+        return res.status(400).json({ error: 'productId is required' });
+    }
+
+    try {
+        await syncManager.syncSpecificProduct(productId);
+        res.json({ status: 'success', message: `Synced product ${productId}` });
+    } catch (error: any) {
+        console.error('Single sync failed:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Get Pricing Rules
 app.get('/api/pricing/rules', (req, res) => {
     res.json(pricingEngine.getRules());

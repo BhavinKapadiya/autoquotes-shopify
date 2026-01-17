@@ -48,7 +48,11 @@ export class AQClient {
      */
     async getProductDetails(id: string): Promise<AQProduct | null> {
         try {
-            const response = await this.client.get<AQProduct>(`/products/${id}`);
+            const response = await this.client.get<any>(`/products/${id}`);
+            // The API returns { data: [ { ... } ] } for single products too
+            if (response.data && Array.isArray(response.data.data)) {
+                return response.data.data[0];
+            }
             return response.data;
         } catch (error) {
             console.error(`Error fetching product details for ${id}:`, error);

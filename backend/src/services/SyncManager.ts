@@ -49,6 +49,19 @@ export class SyncManager {
         fs.writeFileSync(this.stateFile, JSON.stringify({ lastSync: date }));
     }
 
+    async syncSpecificProduct(productId: string) {
+        console.log(`Force syncing specific product: ${productId}`);
+        const product = await this.aqClient.getProductDetails(productId);
+
+        if (!product) {
+            throw new Error(`Product ${productId} not found in AutoQuotes.`);
+        }
+
+        console.log(`Fetched details for: ${product.mfrName} - ${product.models?.mfrModel}`);
+        await this.syncProduct(product);
+        return product;
+    }
+
     async syncAllProducts(forceFull: boolean = false) {
         console.log(`Starting sync... (Force Full: ${forceFull})`);
 
