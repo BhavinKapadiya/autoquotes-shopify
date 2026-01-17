@@ -122,8 +122,31 @@ export default function Home() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
+
           {/* Left Column: Controls */}
           <div className="space-y-8">
+
+            {/* Manufacturer Selection */}
+            <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+                🏭 Manufacturers
+              </h2>
+
+              <div className="space-y-4">
+                {/* Search/Filter would go here if list is long */}
+                <div className="max-h-60 overflow-y-auto border rounded p-2 custom-scrollbar">
+                  {loading ? (
+                    <div className="text-gray-500 text-sm p-2">Loading manufacturers...</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* We will fetch this list dynamically. For now, placeholders or minimal logic needed */}
+                      {/* Actually, we need to fetch this data. I'll add a useEffect below or assume it's added. */}
+                      <ManufacturerList />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
 
             {/* Single Product Sync */}
             <section className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">

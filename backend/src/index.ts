@@ -88,6 +88,36 @@ app.get('/api/pricing/rules', (req, res) => {
     res.json(pricingEngine.getRules());
 });
 
+// --- Manufacturer Settings ---
+
+app.get('/api/manufacturers', async (req, res) => {
+    try {
+        const mfrs = await aqClient.getManufacturers();
+        res.json(mfrs);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch manufacturers' });
+    }
+});
+
+app.get('/api/settings', (req, res) => {
+    try {
+        const enabled = syncManager.getEnabledManufacturers();
+        res.json({ enabledManufacturers: enabled });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch settings' });
+    }
+});
+
+app.post('/api/settings', (req, res) => {
+    const { enabledManufacturers } = req.body;
+    if (Array.isArray(enabledManufacturers)) {
+        syncManager.setEnabledManufacturers(enabledManufacturers);
+        res.json({ status: 'Settings saved' });
+    } else {
+        res.status(400).json({ error: 'Invalid format' });
+    }
+});
+
 // Update Pricing Rule
 app.post('/api/pricing/rules', (req, res) => {
     const { manufacturer, markup } = req.body;

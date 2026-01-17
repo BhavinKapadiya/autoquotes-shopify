@@ -58,18 +58,32 @@ export class SyncManager {
 
         if (!isUUID) {
             console.log(`'${input}' is not a UUID. Searching full product list for Model Number...`);
-            // Fetch ALL products to search (this might be heavy, but fine for a manual force action)
-            // Note: getProducts() uses an internal limit or fetches for the default manufacturer if not specified.
-            // If the product is in a different manufacturer, this might still miss it, but for AARCO (default) it should work.
-            const allProducts = await this.aqClient.getProducts();
-            const found = allProducts.find(p => p.models?.mfrModel === input || p.models?.mfrModel === input.trim());
+
+            const enabled = this.getEnabledManufacturers();
+            let found: AQProduct | undefined;
+
+            // Search in all enabled manufacturers
+            for (const mfrId of enabled) {
+                // If we want to be fast, we probably shouldn't fetch EVERYTHING. 
+                // But without a "search by model" endpoint, we have to.
+                // Optimally we'd cache this list, but for specific sync it's okay to be slow.
+                try {
+                    const products = await this.aqClient.getProducts(undefined, mfrId);
+                    found = products.find(p => p.models?.mfrModel === input || p.models?.mfrModel === input.trim());
+                    if (found) {
+                        console.log(`Found in Manufacturer ${mfrId}`);
+                        break;
+                    }
+                } catch (e) {
+                    console.error(`Error searching mfr ${mfrId}:`, e);
+                }
+            }
 
             if (found) {
                 console.log(`✅ Found Model '${input}' -> ID: ${found.productId}`);
                 productId = found.productId;
             } else {
-                console.warn(`❌ Model '${input}' not found in the main list. Trying to use as ID anyway (fallback)...`);
-                // Proceeding with original input in case it's a weird ID, but likely will fail 500
+                console.warn(`❌ Model '${input}' not found in enabled manufacturers. Trying to use as ID anyway...`);
             }
         }
 
@@ -84,6 +98,26 @@ export class SyncManager {
         return product;
     }
 
+    // --- Manufacturer Settings ---
+
+    getEnabledManufacturers(): string[] {
+        if (fs.existsSync(this.stateFile)) {
+            const data = JSON.parse(fs.readFileSync(this.stateFile, 'utf-8'));
+            // Default to AARCO if nothing saved
+            return data.enabledManufacturers || ['78512195-9f0a-de11-b012-001ec95274b6'];
+        }
+        return ['78512195-9f0a-de11-b012-001ec95274b6'];
+    }
+
+    setEnabledManufacturers(ids: string[]) {
+        let data: any = {};
+        if (fs.existsSync(this.stateFile)) {
+            data = JSON.parse(fs.readFileSync(this.stateFile, 'utf-8'));
+        }
+        data.enabledManufacturers = ids;
+        fs.writeFileSync(this.stateFile, JSON.stringify(data));
+    }
+
     async syncAllProducts(forceFull: boolean = false) {
         console.log(`Starting sync... (Force Full: ${forceFull})`);
 
@@ -95,10 +129,22 @@ export class SyncManager {
             console.log('Forcing full sync - ignoring last sync timestamp.');
         }
 
+        const enabledMfrs = this.getEnabledManufacturers();
+        console.log(`Syncing ${enabledMfrs.length} manufacturers:`, enabledMfrs);
+
         try {
-            // 1. Fetch Main List
-            const products = await this.aqClient.getProducts(lastSync);
-            console.log(`Fetched ${products.length} products from AQ.`);
+            // 1. Fetch Lists from ALL enabled manufacturers
+            let allProducts: AQProduct[] = [];
+
+            for (const mfrId of enabledMfrs) {
+                console.log(`Fetching products for Manufacturer ID: ${mfrId}`);
+                const products = await this.aqClient.getProducts(lastSync, mfrId);
+                console.log(`- Got ${products.length} products.`);
+                allProducts = [...allProducts, ...products];
+            }
+
+            const products = allProducts; // Keep variable name consistent for rest of logic
+            console.log(`Total items to process: ${products.length}`);
 
             const processedIds = new Set(products.map(p => p.productId));
 
