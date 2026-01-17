@@ -113,12 +113,20 @@ export default function Home() {
         {filtered.map(m => (
           <div key={m.id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
             <span className="text-sm font-medium text-gray-700">{m.name}</span>
-            <button
-              onClick={() => toggleMfr(m.id)}
-              className={`text-xs px-2 py-1 rounded border ${enabledMfrs.includes(m.id) ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}
-            >
-              {enabledMfrs.includes(m.id) ? 'Active' : 'Enable'}
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setManufacturer(m.name.toUpperCase())}
+                className="text-xs px-2 py-1 rounded border bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
+              >
+                Set Rule
+              </button>
+              <button
+                onClick={() => toggleMfr(m.id)}
+                className={`text-xs px-2 py-1 rounded border ${enabledMfrs.includes(m.id) ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-green-200'}`}
+              >
+                {enabledMfrs.includes(m.id) ? 'Active' : 'Enable'}
+              </button>
+            </div>
           </div>
         ))}
         {filtered.length === 0 && <div className="text-xs text-gray-400 text-center py-2">No results</div>}
