@@ -66,6 +66,66 @@ export default function Home() {
     }
   };
 
+  const fetchData = async () => {
+    try {
+      const mfrRes = await authFetch('/api/manufacturers');
+      if (mfrRes.ok) setManufacturers(await mfrRes.json());
+
+      const setRes = await authFetch('/api/settings');
+      if (setRes.ok) {
+        const data = await setRes.json();
+        setEnabledMfrs(data.enabledManufacturers || []);
+      }
+    } catch (e) {
+      console.error("Failed to load initial data", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchRules();
+    fetchData();
+  }, []);
+
+  const toggleMfr = async (id: string) => {
+    const newSet = enabledMfrs.includes(id)
+      ? enabledMfrs.filter(x => x !== id)
+      : [...enabledMfrs, id];
+
+    setEnabledMfrs(newSet);
+    await authFetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabledManufacturers: newSet })
+    });
+  };
+
+  function ManufacturerList() {
+    const filtered = manufacturers.filter(m => m.name.toLowerCase().includes(mfrSearch.toLowerCase()));
+    return (
+      <div className="space-y-2">
+        <input
+          type="text"
+          placeholder="Search Vendors..."
+          className="w-full text-sm p-2 border rounded mb-2"
+          value={mfrSearch}
+          onChange={e => setMfrSearch(e.target.value)}
+        />
+        {filtered.map(m => (
+          <div key={m.id} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+            <span className="text-sm font-medium text-gray-700">{m.name}</span>
+            <button
+              onClick={() => toggleMfr(m.id)}
+              className={`text-xs px-2 py-1 rounded border ${enabledMfrs.includes(m.id) ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}
+            >
+              {enabledMfrs.includes(m.id) ? 'Active' : 'Enable'}
+            </button>
+          </div>
+        ))}
+        {filtered.length === 0 && <div className="text-xs text-gray-400 text-center py-2">No results</div>}
+      </div>
+    );
+  }
+
 
 
   const triggerSync = async () => {
