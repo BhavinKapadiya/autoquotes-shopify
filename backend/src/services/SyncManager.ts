@@ -49,8 +49,30 @@ export class SyncManager {
         fs.writeFileSync(this.stateFile, JSON.stringify({ lastSync: date }));
     }
 
-    async syncSpecificProduct(productId: string) {
-        console.log(`Force syncing specific product: ${productId}`);
+    async syncSpecificProduct(input: string) {
+        console.log(`Force syncing specific input: ${input}`);
+        let productId = input;
+
+        // 1. Check if input is a UUID (roughly)
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input);
+
+        if (!isUUID) {
+            console.log(`'${input}' is not a UUID. Searching full product list for Model Number...`);
+            // Fetch ALL products to search (this might be heavy, but fine for a manual force action)
+            // Note: getProducts() uses an internal limit or fetches for the default manufacturer if not specified.
+            // If the product is in a different manufacturer, this might still miss it, but for AARCO (default) it should work.
+            const allProducts = await this.aqClient.getProducts();
+            const found = allProducts.find(p => p.models?.mfrModel === input || p.models?.mfrModel === input.trim());
+
+            if (found) {
+                console.log(`✅ Found Model '${input}' -> ID: ${found.productId}`);
+                productId = found.productId;
+            } else {
+                console.warn(`❌ Model '${input}' not found in the main list. Trying to use as ID anyway (fallback)...`);
+                // Proceeding with original input in case it's a weird ID, but likely will fail 500
+            }
+        }
+
         const product = await this.aqClient.getProductDetails(productId);
 
         if (!product) {
