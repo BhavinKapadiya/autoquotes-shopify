@@ -87,4 +87,10 @@ export class GoogleSheetsAdapter {
         const allVariants = await this.fetchAllVariants();
         return allVariants.filter(v => v.modelNumber.toLowerCase() === modelNumber.toLowerCase());
     }
+
+    async getAllVariantModels(): Promise<string[]> {
+        const allVariants = await this.fetchAllVariants();
+        // Return unique model numbers
+        return Array.from(new Set(allVariants.map(v => v.modelNumber)));
+    }
 }

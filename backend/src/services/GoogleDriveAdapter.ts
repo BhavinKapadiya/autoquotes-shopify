@@ -59,9 +59,35 @@ export class GoogleDriveAdapter {
             }
 
             return null;
-        } catch (error) {
-            console.error(`Error searching Drive for ${modelNumber}:`, error);
-            return null;
+    async getAllImageModels(): Promise < string[] > {
+                if(!this.drive || !this.folderId) return [];
+
+                try {
+                    const query = `'${this.folderId}' in parents and trshed = false`;
+                    const res = await this.drive.files.list({
+                        q: query,
+                        fields: 'files(name)',
+                        pageSize: 1000 // Reasonable limit for now
+                    });
+
+                    const files = res.data.files;
+                    if(!files || files.length === 0) return [];
+
+                const models = files
+                    .map((f: any) => f.name)
+                    .filter((name: string) => name) // filter nulls
+                    .map((name: string) => {
+                        // Strip extension (e.g. FAT16.jpg -> FAT16)
+                        return name.replace(/\.[^/.]+$/, "");
+                    });
+
+                console.log(`Found ${models.length} image overrides in Drive.`);
+                return Array.from(new Set(models)); // Unique only
+
+            } catch (error) {
+                console.error('Error listing Drive files:', error);
+                return [];
+            }
         }
     }
 }
