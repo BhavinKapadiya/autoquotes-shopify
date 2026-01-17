@@ -22,6 +22,11 @@ export default function Home() {
   const [status, setStatus] = useState('');
   const [rules, setRules] = useState<PricingRule[]>([]);
 
+  // Manufacturer Settings State
+  const [manufacturers, setManufacturers] = useState<{ id: string, name: string }[]>([]);
+  const [enabledMfrs, setEnabledMfrs] = useState<string[]>([]);
+  const [mfrSearch, setMfrSearch] = useState('');
+
   // Helper for Authenticated Requests using App Bridge v4
   const authFetch = async (url: string, options: RequestInit = {}) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://autoquotes-shopify.onrender.com';
@@ -61,15 +66,7 @@ export default function Home() {
     }
   };
 
-  useEffect(() => {
-    // Check if we are embedded
-    if (typeof window !== 'undefined' && !window.shopify) {
-      // We might want to inject the script if it's missing, but for now just warn
-      // <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
-      // In Next.js App Router we should theoretically put this in layout `head`.
-    }
-    fetchRules();
-  }, []);
+
 
   const triggerSync = async () => {
     setLoading(true);
