@@ -13,9 +13,13 @@ import { PricingEngine } from './services/PricingEngine';
 import { SyncManager } from './services/SyncManager';
 import { GoogleSheetsAdapter } from './services/GoogleSheetsAdapter';
 import { GoogleDriveAdapter } from './services/GoogleDriveAdapter';
+import { Database } from './services/Database';
 
 const app = express();
 const port = process.env.PORT || 5000;
+
+// Connect to Database
+Database.getInstance().connect();
 
 // Initialize Shopify App
 const shopify = shopifyApp({
@@ -60,11 +64,48 @@ app.get('/', (req, res) => {
     res.send('AutoQuotes to Shopify Sync Service is running');
 });
 
-// Trigger Sync
+// Trigger Sync (Legacy/Full)
 app.post('/api/sync', async (req, res) => {
     const { force } = req.body;
-    res.send({ status: `Sync started (Full: ${!!force})` });
+    // New behavior: Ingest then Sync
+    res.send({ status: `Full Sync cycle started` });
     syncManager.syncAllProducts(!!force).catch(err => console.error(err));
+});
+
+// New Staged Endpoints
+app.post('/api/products/ingest', async (req, res) => {
+    res.send({ status: 'Ingest started' });
+    syncManager.ingestFromAQ().catch(err => console.error(err));
+});
+
+app.post('/api/products/sync', async (req, res) => {
+    res.send({ status: 'Sync to Shopify started' });
+    syncManager.syncToShopify().catch(err => console.error(err));
+});
+
+app.post('/api/products/pricing/apply', async (req, res) => {
+    res.send({ status: 'Pricing update started' });
+    syncManager.reapplyPricingRules().catch(err => console.error(err));
+});
+
+app.get('/api/products', async (req, res) => {
+    try {
+        const Product = require('./models/Product').default;
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = 50;
+        const skip = (page - 1) * limit;
+
+        const products = await Product.find()
+            .sort({ aqMfrName: 1, aqModelNumber: 1 })
+            .skip(skip)
+            .limit(limit);
+
+        const total = await Product.countDocuments();
+
+        res.json({ products, total, page, pages: Math.ceil(total / limit) });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch products' });
+    }
 });
 
 // Sync Single Product
@@ -119,9 +160,9 @@ app.post('/api/settings', (req, res) => {
 });
 
 // Update Pricing Rule
-app.post('/api/pricing/rules', (req, res) => {
+app.post('/api/pricing/rules', async (req, res) => {
     const { manufacturer, markup } = req.body;
-    pricingEngine.setRule(manufacturer, { manufacturer, markupPercentage: markup });
+    await pricingEngine.setRule(manufacturer, { manufacturer, markupPercentage: markup });
     res.json({ status: 'Rule updated' });
 });
 

@@ -1,0 +1,70 @@
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IProduct extends Document {
+    aqMfrId: string;
+    aqMfrName: string;
+    aqModelNumber: string;
+    aqProductId: string;
+
+    title: string;
+    descriptionHtml: string;
+    specSheetUrl?: string;
+
+    // Pricing
+    listPrice: number;
+    costMarkup: number; // The rule applied
+    finalPrice: number; // Calculated price
+
+    // Status
+    status: 'staged' | 'synced' | 'error';
+    syncError?: string;
+    lastIngested: Date;
+    lastSynced?: Date;
+
+    // Raw Data (Stored for reference/re-processing)
+    images: { src: string, attachment?: string }[];
+    categoryValues: { property: string, value: string }[];
+    variants: any[]; // Store calculated variants
+    tags: string[];
+    productType: string;
+
+    // Shopify Info
+    shopifyId?: string;
+    shopifyHandle?: string;
+}
+
+const ProductSchema: Schema = new Schema({
+    aqMfrId: { type: String, required: true },
+    aqMfrName: { type: String, required: true },
+    aqModelNumber: { type: String, required: true, index: true },
+    aqProductId: { type: String, required: true, unique: true },
+
+    title: { type: String, required: true },
+    descriptionHtml: { type: String },
+    specSheetUrl: { type: String },
+
+    listPrice: { type: Number, default: 0 },
+    costMarkup: { type: Number, default: 0 },
+    finalPrice: { type: Number, default: 0 },
+
+    status: { type: String, default: 'staged', enum: ['staged', 'synced', 'error'] },
+    syncError: { type: String },
+    lastIngested: { type: Date, default: Date.now },
+    lastSynced: { type: Date },
+
+    images: [{ src: String, attachment: String }],
+    categoryValues: [{ property: String, value: String }],
+    variants: [Schema.Types.Mixed],
+    tags: [String],
+    productType: { type: String },
+
+    shopifyId: { type: String },
+    shopifyHandle: { type: String }
+}, {
+    timestamps: true
+});
+
+// Composite index for fast lookups by manufacturer
+ProductSchema.index({ aqMfrId: 1, status: 1 });
+
+export default mongoose.model<IProduct>('Product', ProductSchema);

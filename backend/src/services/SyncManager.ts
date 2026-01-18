@@ -49,55 +49,6 @@ export class SyncManager {
         fs.writeFileSync(this.stateFile, JSON.stringify({ lastSync: date }));
     }
 
-    async syncSpecificProduct(input: string) {
-        console.log(`Force syncing specific input: ${input}`);
-        let productId = input;
-
-        // 1. Check if input is a UUID (roughly)
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input);
-
-        if (!isUUID) {
-            console.log(`'${input}' is not a UUID. Searching full product list for Model Number...`);
-
-            const enabled = this.getEnabledManufacturers();
-            let found: AQProduct | undefined;
-
-            // Search in all enabled manufacturers
-            for (const mfrId of enabled) {
-                // If we want to be fast, we probably shouldn't fetch EVERYTHING. 
-                // But without a "search by model" endpoint, we have to.
-                // Optimally we'd cache this list, but for specific sync it's okay to be slow.
-                try {
-                    const products = await this.aqClient.getProducts(undefined, mfrId);
-                    found = products.find(p => p.models?.mfrModel === input || p.models?.mfrModel === input.trim());
-                    if (found) {
-                        console.log(`Found in Manufacturer ${mfrId}`);
-                        break;
-                    }
-                } catch (e) {
-                    console.error(`Error searching mfr ${mfrId}:`, e);
-                }
-            }
-
-            if (found) {
-                console.log(`✅ Found Model '${input}' -> ID: ${found.productId}`);
-                productId = found.productId;
-            } else {
-                console.warn(`❌ Model '${input}' not found in enabled manufacturers. Trying to use as ID anyway...`);
-            }
-        }
-
-        const product = await this.aqClient.getProductDetails(productId);
-
-        if (!product) {
-            throw new Error(`Product ${productId} not found in AutoQuotes.`);
-        }
-
-        console.log(`Fetched details for: ${product.mfrName} - ${product.models?.mfrModel}`);
-        await this.syncProduct(product);
-        return product;
-    }
-
     // --- Manufacturer Settings ---
 
     getEnabledManufacturers(): string[] {
@@ -118,226 +69,283 @@ export class SyncManager {
         fs.writeFileSync(this.stateFile, JSON.stringify(data));
     }
 
-    async syncAllProducts(forceFull: boolean = false) {
-        console.log(`Starting sync... (Force Full: ${forceFull})`);
+    // --- New Staged Workflow ---
 
-        let lastSync: string | undefined = undefined;
-        if (!forceFull) {
-            lastSync = this.getLastSync();
-            console.log(`Last sync was: ${lastSync || 'Never'}`);
-        } else {
-            console.log('Forcing full sync - ignoring last sync timestamp.');
-        }
-
+    async ingestFromAQ(forceFull: boolean = false) {
+        console.log(`Starting INGEST from AQ... (Force Full: ${forceFull})`);
         const enabledMfrs = this.getEnabledManufacturers();
-        console.log(`Syncing ${enabledMfrs.length} manufacturers:`, enabledMfrs);
 
         try {
             // 1. Fetch Lists from ALL enabled manufacturers
             let allProducts: AQProduct[] = [];
-
             for (const mfrId of enabledMfrs) {
                 console.log(`Fetching products for Manufacturer ID: ${mfrId}`);
-                const products = await this.aqClient.getProducts(lastSync, mfrId);
+                const products = await this.aqClient.getProducts(undefined, mfrId);
                 console.log(`- Got ${products.length} products.`);
                 allProducts = [...allProducts, ...products];
             }
 
-            const products = allProducts; // Keep variable name consistent for rest of logic
-            console.log(`Total items to process: ${products.length}`);
+            console.log(`Total items to ingest: ${allProducts.length}`);
 
-            const processedIds = new Set(products.map(p => p.productId));
-
-            // 2. Fetch User-Defined Models (Drive Images + Sheet Variants)
-            console.log('Checking for user-defined products (Images/Variants)...');
-            const driveModels = await this.googleDrive.getAllImageModels();
-            const sheetModels = await this.googleSheets.getAllVariantModels();
-
-            const userModels = new Set([...driveModels, ...sheetModels]);
-            console.log(`Found ${userModels.size} unique user-defined models.`);
-
-            // 3. Sync Main List
-            for (const product of products) {
-                await this.syncProduct(product);
-                // Mark model as processed if we have it here
-                if (product.models?.mfrModel) {
-                    // We can't easily mark userModels as processed by ID, but we know this product is synced.
-                    // The next step checks by Model Number anyway (via smart search fallback), so it's fine.
-                }
+            // 2. Save/Update to Database
+            for (const product of allProducts) {
+                await this.saveToStaging(product);
             }
 
-            // 4. Force Sync Missing User Models
-            // We iterate through user models. If they weren't in the main list (by checking if we synced them?), 
-            // actually 'products' is a list of objects. We need to check if a user model maps to one of these.
-            // Since we don't know the ID of user models yet, we have to rely on the fact that if it WAS in the list, 
-            // we already synced it. But wait, we might have synced it but not "known" it was a user model.
-            // A simpler approach: For every user model, check if we found a matching Model Number in the 'products' list.
-            // If NOT found in 'products' list, then we force sync it.
-
-            for (const model of userModels) {
-                const alreadySynced = products.find(p => p.models?.mfrModel === model || p.models?.mfrModel === model.trim());
-
-                if (!alreadySynced) {
-                    console.log(`User model '${model}' was missing from main list. Force syncing...`);
-                    try {
-                        // Use our smart search (which handles model -> ID lookup)
-                        await this.syncSpecificProduct(model);
-                    } catch (err) {
-                        console.error(`Failed to force sync user model '${model}':`, err);
-                    }
-                }
-            }
-
-            this.saveLastSync(new Date().toISOString());
-            console.log('Sync complete.');
+            console.log('Ingest complete.');
         } catch (error) {
-            console.error('Sync failed:', error);
+            console.error('Ingest failed:', error);
         }
     }
 
-    private async syncProduct(aqProduct: AQProduct) {
-        let shopifyData: any; // Declare outside try block for access in catch
+    private async saveToStaging(aqProduct: AQProduct) {
+        // Find existing or create new
+        // Calculate initial price based on current rules
+        // Convert to IProduct format
+        // Upsert into MongoDB
+        const Product = require('../models/Product').default; // Dynamic require to avoid circular dependency issues if any
 
         try {
-            // 1. Validate Data
-            if (!aqProduct.models || !aqProduct.models.mfrModel) {
-                console.warn(`Skipping product ${aqProduct.productId} - Missing model number`);
-                return;
-            }
+            if (!aqProduct.models?.mfrModel) return;
 
             const modelNumber = aqProduct.models.mfrModel;
-            const description = aqProduct.specifications?.shortMarketingSpecification ||
-                aqProduct.specifications?.AQSpecification ||
-                `${aqProduct.mfrName} ${modelNumber}`;
+            const mfrName = aqProduct.mfrName;
 
-            // 2. Base Price Calculation
+            // Calculate Price
             const basePrice = aqProduct.pricing?.listPrice || 0;
+            const finalPrice = this.pricingEngine.calculatePrice({
+                ...aqProduct,
+                ListPrice: basePrice,
+                Manufacturer: mfrName,
+                ModelNumber: modelNumber,
+            } as any);
 
-            // 3. Check for Google Drive Image Override
-            let images: any[] = aqProduct.pictures ? aqProduct.pictures.map(pic => ({ src: pic.url })) : [];
+            // Extract Spec Sheet
+            let specSheetUrl = '';
+            // Check 'documents' first (New API Structure)
+            if (aqProduct.documents && aqProduct.documents.length > 0) {
+                const doc = aqProduct.documents.find(d => d.mediaType === 'document' || (d.url && d.url.toLowerCase().endsWith('.pdf')));
+                if (doc) specSheetUrl = doc.url;
+            }
+            // Fallback to 'resources'
+            if (!specSheetUrl && aqProduct.resources) {
+                const res = aqProduct.resources.find(r => r.type === 'SpecSheet' || (r.url && r.url.toLowerCase().endsWith('.pdf')));
+                if (res) specSheetUrl = res.url;
+            }
+
+            // Extract Images
+            let images = aqProduct.pictures ? aqProduct.pictures.map(pic => ({ src: pic.url })) : [];
             const overrideImage = await this.googleDrive.findImageOverride(modelNumber);
-
             if (overrideImage) {
-                console.log(`Using override image for ${modelNumber}`);
-                // Replace all AQ images with the single override image
-                // Shopify allows 'attachment' for base64
-                images = [{
-                    attachment: overrideImage.base64
-                }];
+                images = [{ src: '', attachment: overrideImage.base64 }];
             }
 
-            // 4. Check for Google Sheets Variants
-            const customVariants = await this.googleSheets.getVariants(modelNumber);
-            let shopifyVariants = [];
-
-            if (customVariants.length > 0) {
-                console.log(`Found ${customVariants.length} custom variants for ${modelNumber}`);
-
-                // Construct variants from Sheet Data
-                shopifyVariants = customVariants.map(v => {
-                    // Calculate price for this variant
-                    const variantPrice = this.pricingEngine.calculatePrice({
-                        ...aqProduct,
-                        ListPrice: basePrice + (v.priceMod || 0), // Apply modifier to base
-                        Manufacturer: aqProduct.mfrName,
-                        ModelNumber: modelNumber,
-                    } as any);
-
-                    return {
-                        price: variantPrice,
-                        sku: `${modelNumber}${v.skuMod}`,
-                        inventory_management: null,
-                        option1: v.optionValue, // e.g. "Red"
-                    };
-                });
-            } else {
-                // Default Single Variant
-                const finalPrice = this.pricingEngine.calculatePrice({
-                    ...aqProduct,
-                    ListPrice: basePrice,
-                    Manufacturer: aqProduct.mfrName,
-                    ModelNumber: modelNumber,
-                } as any);
-
-                shopifyVariants.push({
-                    price: finalPrice,
-                    sku: modelNumber,
-                    inventory_management: null,
-                    option1: 'Default Title'
-                });
-            }
-
-            // 5. Prepare Shopify Data
-            // Construct nice body HTML
-            let bodyHtml = `<p>${description}</p>`;
-            if (aqProduct.specifications?.longMarketingSpecification) {
-                bodyHtml += `<p>${aqProduct.specifications.longMarketingSpecification}</p>`;
-            }
-            if (aqProduct.specifications?.AQSpecification) {
-                bodyHtml += `<h3>Specifications</h3><p>${aqProduct.specifications.AQSpecification}</p>`;
-            }
-
-            // Determine Option Names (if using variants)
-            const options = customVariants.length > 0
-                ? [{ name: customVariants[0].optionName }] // Assuming all rows for a model share the Option Name (e.g. "Color")
-                : undefined;
-
-            shopifyData = {
-                title: `${aqProduct.mfrName} ${modelNumber}`,
-                body_html: bodyHtml,
-                vendor: aqProduct.mfrName,
-                product_type: aqProduct.productCategory?.name || 'General',
-                handle: `${aqProduct.mfrName}-${modelNumber}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-                options: options,
-                variants: shopifyVariants,
+            const updateData = {
+                aqMfrId: aqProduct.mfrId,
+                aqMfrName: mfrName,
+                aqModelNumber: modelNumber,
+                aqProductId: aqProduct.productId,
+                title: `${mfrName} ${modelNumber}`,
+                descriptionHtml: aqProduct.specifications?.longMarketingSpecification || aqProduct.specifications?.AQSpecification || '',
+                listPrice: basePrice,
+                finalPrice: finalPrice,
+                specSheetUrl: specSheetUrl,
+                categoryValues: aqProduct.categoryValues || [],
                 images: images,
-                metafields: [
-                    { key: 'model_number', value: modelNumber, type: 'single_line_text_field', namespace: 'custom' },
-                    { key: 'aq_id', value: aqProduct.productId, type: 'single_line_text_field', namespace: 'custom' },
-                    { key: 'shipping_weight', value: String(aqProduct.productDimension?.shippingWeight || 0), type: 'number_decimal', namespace: 'custom' },
-                    { key: 'dimensions', value: `${aqProduct.productDimension?.productHeight || 0}"H x ${aqProduct.productDimension?.productWidth || 0}"W x ${aqProduct.productDimension?.productDepth || 0}"D`, type: 'single_line_text_field', namespace: 'custom' }
-                ]
+                productType: aqProduct.productCategory?.name || 'General',
+                // Keep status valid if it exists, else default to staged
+                // Actually, if we re-ingest, we probably want to keep it as-is unless we force reset?
+                // Let's not overwrite status if it's 'synced' unless price changed?
+                // For simplified flow: Always set to 'staged' on ingest implies "Review this update".
+                // But if syncing 1600 products, we don't want to re-review everything.
+                // Logic: If price or key data changed, set to staged?
+                // For now, let's JUST update data. Status management can be manual or implicit.
             };
 
-            // 6. Push to Shopify
-            const existing = await this.shopifyClient.findProductByHandle(shopifyData.handle);
+            await Product.findOneAndUpdate(
+                { aqProductId: aqProduct.productId },
+                { ...updateData, lastIngested: new Date() },
+                { upsert: true, new: true, setDefaultsOnInsert: true }
+            );
+        } catch (e) {
+            console.error(`Failed to save product ${aqProduct.productId}`, e);
+        }
+    }
 
-            if (existing) {
-                console.log(`Updating ${shopifyData.handle}...`);
-                await this.shopifyClient.updateProduct(existing.id, shopifyData);
-            } else {
-                console.log(`Creating ${shopifyData.handle}...`);
-                await this.shopifyClient.createProduct(shopifyData);
+    async syncToShopify(specificProductId?: string) {
+        console.log('Starting SYNC to Shopify...');
+        const Product = require('../models/Product').default;
+
+        let productsToSync = [];
+        if (specificProductId) {
+            productsToSync = await Product.find({ aqProductId: specificProductId });
+        } else {
+            // Sync everything that is 'staged' (or just everything for now as users want full sync)
+            // In true PIM, you only sync 'Approved'. Here we autosync 'staged' for MVP parity.
+            productsToSync = await Product.find({ status: { $in: ['staged', 'synced'] } });
+        }
+
+        console.log(`Found ${productsToSync.length} products to sync.`);
+
+        for (const product of productsToSync) {
+            try {
+                // Construct Body HTML from stored data
+                let bodyHtml = `<p>${product.aqMfrName} ${product.aqModelNumber}</p>`;
+                if (product.descriptionHtml) {
+                    bodyHtml += `<p>${product.descriptionHtml}</p>`;
+                }
+
+                if (product.categoryValues && product.categoryValues.length > 0) {
+                    bodyHtml += `<h3>Product Features & Specs</h3>`;
+                    bodyHtml += `<table border="1" cellpadding="5" style="border-collapse:collapse; width:100%;"><tbody>`;
+                    product.categoryValues.forEach((cv: any) => {
+                        bodyHtml += `<tr><td style="font-weight:bold;">${cv.property}</td><td>${cv.value}</td></tr>`;
+                    });
+                    bodyHtml += `</tbody></table>`;
+                } else {
+                    // Fallback text if no table
+                }
+
+                // Check for Custom Variants (Google Sheets)
+                // We re-fetch here to get latest sheet data
+                const customVariants = await this.googleSheets.getVariants(product.aqModelNumber);
+
+                let shopifyVariants = [];
+                if (customVariants.length > 0) {
+                    shopifyVariants = customVariants.map(v => {
+                        const variantPrice = product.finalPrice + (v.priceMod || 0);
+                        return {
+                            price: variantPrice,
+                            sku: `${product.aqModelNumber}${v.skuMod}`,
+                            option1: v.optionValue,
+                            inventory_management: null
+                        };
+                    });
+                } else {
+                    shopifyVariants.push({
+                        price: product.finalPrice,
+                        sku: product.aqModelNumber,
+                        option1: 'Default Title',
+                        inventory_management: null
+                    });
+                }
+
+                const options = customVariants.length > 0 ? [{ name: customVariants[0].optionName }] : undefined;
+
+                const shopifyData = {
+                    title: product.title,
+                    body_html: bodyHtml,
+                    vendor: product.aqMfrName,
+                    product_type: product.productType,
+                    handle: `${product.aqMfrName}-${product.aqModelNumber}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+                    options: options,
+                    variants: shopifyVariants,
+                    images: product.images,
+                    metafields: [
+                        { key: 'model_number', value: product.aqModelNumber, type: 'single_line_text_field', namespace: 'custom' },
+                        { key: 'aq_id', value: product.aqProductId, type: 'single_line_text_field', namespace: 'custom' },
+                        ...(product.specSheetUrl ? [{ key: 'spec_sheet_url', value: product.specSheetUrl, type: 'url', namespace: 'custom' }] : [])
+                    ]
+                };
+
+                // Push
+                const existing = await this.shopifyClient.findProductByHandle(shopifyData.handle);
+                let shopifyId = '';
+                if (existing) {
+                    // console.log(`Updating ${shopifyData.handle}...`);
+                    const res = await this.shopifyClient.updateProduct(existing.id, shopifyData);
+                    shopifyId = `${res.id}`;
+                } else {
+                    console.log(`Creating ${shopifyData.handle}...`);
+                    const res = await this.shopifyClient.createProduct(shopifyData);
+                    shopifyId = `${res.id}`;
+                }
+
+                // Update DB Status
+                product.status = 'synced';
+                product.shopifyId = shopifyId;
+                product.shopifyHandle = shopifyData.handle;
+                product.lastSynced = new Date();
+                await product.save();
+
+            } catch (err) {
+                console.error(`Failed to sync ${product.aqModelNumber} to Shopify:`, err);
+                product.status = 'error';
+                product.syncError = JSON.stringify(err);
+                await product.save();
             }
+        }
+    }
 
-        } catch (error: any) {
-            // RETRY LOGIC: If it fails due to "file not supported on trial accounts", try syncing WITHOUT images
-            if (error.response && error.response.body && JSON.stringify(error.response.body).includes('trial accounts')) {
-                console.warn(`⚠️  Skipping images for ${aqProduct.models?.mfrModel} due to Shopify Trial limitation.`);
+    async syncAllProducts(forceFull: boolean = false) {
+        // Legacy endpoint redirect
+        await this.ingestFromAQ(forceFull);
+        await this.syncToShopify();
+    }
 
+    async reapplyPricingRules() {
+        console.log('Re-applying pricing rules to ALL staged products...');
+        const Product = require('../models/Product').default;
+
+        // Reload rules to be sure
+        await this.pricingEngine.loadRules();
+
+        const products = await Product.find({ status: { $in: ['staged', 'synced'] } });
+        console.log(`Processing ${products.length} products...`);
+
+        let count = 0;
+        for (const p of products) {
+            const finalPrice = this.pricingEngine.calculatePrice({
+                ListPrice: p.listPrice,
+                Manufacturer: p.aqMfrName,
+                ModelNumber: p.aqModelNumber
+            });
+
+            p.finalPrice = finalPrice;
+            // Should we revert to 'staged' if it was 'synced'?
+            // If price changes, yes, it should be synced again.
+            p.status = 'staged';
+            await p.save();
+            count++;
+        }
+        console.log(`Updated prices for ${count} products.`);
+    }
+
+    async syncSpecificProduct(input: string) {
+        console.log(`Force syncing specific input: ${input}`);
+        let productId = input;
+
+        // 1. Check if UUID
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input);
+
+        if (!isUUID) {
+            console.log(`'${input}' is not a UUID. Searching full product list for Model Number...`);
+            const enabled = this.getEnabledManufacturers();
+            let found: AQProduct | undefined;
+            for (const mfrId of enabled) {
                 try {
-                    // Remove images and retry
-                    const dataWithoutImages = { ...shopifyData, images: [] }; // shopifyData needs to be accessible here, so we might need to restructure slightly or just paste the logic inside the main block.
-                    // simpler: just call create again here, but we need 'shopifyData'.
-                    // To avoid large refactor, let's just use the client directly with modified data if we can acccess it.
-                    // actually, better to handle this inside the main flow or just catch it here attempting a re-create.
-
-                    // RE-ATTEMPT creation/update without images
-                    const existing = await this.shopifyClient.findProductByHandle(shopifyData.handle);
-                    if (existing) {
-                        await this.shopifyClient.updateProduct(existing.id, { ...shopifyData, images: [] });
-                    } else {
-                        await this.shopifyClient.createProduct({ ...shopifyData, images: [] });
-                    }
-                    console.log(`✅ Recovered: Synced ${aqProduct.models?.mfrModel} (No Images).`);
-                    return;
-
-                } catch (retryError) {
-                    console.error(`Retry failed for ${aqProduct.models?.mfrModel}:`, retryError);
+                    const products = await this.aqClient.getProducts(undefined, mfrId);
+                    found = products.find(p => p.models?.mfrModel === input || p.models?.mfrModel === input.trim());
+                    if (found) break;
+                } catch (e) {
+                    console.error(e);
                 }
             }
-
-            console.error(`Failed to sync product ${aqProduct.models?.mfrModel || 'Unknown'}:`, error);
+            if (found) {
+                productId = found.productId;
+            } else {
+                throw new Error(`Product ${input} not found`);
+            }
         }
+
+        const product = await this.aqClient.getProductDetails(productId);
+        if (!product) throw new Error('Product not found in AQ');
+
+        // Save to DB
+        await this.saveToStaging(product);
+        // Sync to Shopify
+        await this.syncToShopify(product.productId);
+
+        return product;
     }
 }
