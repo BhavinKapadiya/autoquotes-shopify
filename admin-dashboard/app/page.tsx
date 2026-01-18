@@ -50,12 +50,14 @@ function PricingStep({
   manufacturers,
   enabledMfrs,
   toggleMfr,
-  setManufacturer
+  setManufacturer,
+  loading
 }: {
   manufacturers: Manufacturer[],
   enabledMfrs: string[],
   toggleMfr: (id: string) => void,
-  setManufacturer: (name: string) => void
+  setManufacturer: (name: string) => void,
+  loading: boolean
 }) {
   const [search, setSearch] = useState('');
 
@@ -78,11 +80,24 @@ function PricingStep({
         className="w-full text-sm p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none transition-all"
         value={search}
         onChange={e => setSearch(e.target.value)}
+        disabled={loading}
       />
 
       {/* List */}
       <div className="flex-grow overflow-y-auto custom-scrollbar border rounded-lg bg-gray-50 max-h-60">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="p-4 space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="animate-pulse flex space-x-4">
+                <div className="flex-1 space-y-2 py-1">
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                </div>
+              </div>
+            ))}
+            <div className="text-center text-xs text-gray-400 mt-2">Loading vendors...</div>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="p-4 text-center text-gray-400 text-sm">No vendors found.</div>
         ) : (
           <div className="divide-y divide-gray-200">
@@ -195,6 +210,8 @@ export default function Home() {
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([]);
   const [enabledMfrs, setEnabledMfrs] = useState<string[]>([]);
 
+  const [dataLoading, setDataLoading] = useState(true);
+
   // Shared state for the rule form
   const [selectedManufacturer, setSelectedManufacturer] = useState('');
 
@@ -215,6 +232,7 @@ export default function Home() {
   };
 
   const loadInitialData = async () => {
+    setDataLoading(true);
     try {
       const [mfrRes, setRes, ruleRes] = await Promise.all([
         authFetch('/api/manufacturers'),
@@ -233,6 +251,8 @@ export default function Home() {
       }
     } catch (e) {
       console.error("Load failed", e);
+    } finally {
+      setDataLoading(false);
     }
   };
 
@@ -301,6 +321,7 @@ export default function Home() {
               enabledMfrs={enabledMfrs}
               toggleMfr={handleToggleMfr}
               setManufacturer={setSelectedManufacturer}
+              loading={dataLoading}
             />
           </div>
           <SyncStep />
