@@ -15,7 +15,7 @@ export default function StagingPage() {
         fetchProducts(page);
     }, [page]);
 
-    const fetchProducts = async (p) => {
+    const fetchProducts = async (p: number) => {
         setLoading(true);
         try {
             const res = await axios.get(`${API_URL}/api/products?page=${p}`);
@@ -28,7 +28,7 @@ export default function StagingPage() {
         }
     };
 
-    const triggerAction = async (endpoint, label) => {
+    const triggerAction = async (endpoint: string, label: string) => {
         if (!confirm(`Are you sure you want to ${label}?`)) return;
         setActionStatus(`Starting ${label}...`);
         try {
