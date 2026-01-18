@@ -134,7 +134,7 @@ export class SyncManager {
             }
 
             // Extract Images
-            let images = aqProduct.pictures ? aqProduct.pictures.map(pic => ({ src: pic.url })) : [];
+            let images: { src: string, attachment?: string }[] = aqProduct.pictures ? aqProduct.pictures.map(pic => ({ src: pic.url })) : [];
             const overrideImage = await this.googleDrive.findImageOverride(modelNumber);
             if (overrideImage) {
                 images = [{ src: '', attachment: overrideImage.base64 }];
@@ -254,11 +254,11 @@ export class SyncManager {
                 if (existing) {
                     // console.log(`Updating ${shopifyData.handle}...`);
                     const res = await this.shopifyClient.updateProduct(existing.id, shopifyData);
-                    shopifyId = `${res.id}`;
+                    shopifyId = res ? `${res.id}` : '';
                 } else {
                     console.log(`Creating ${shopifyData.handle}...`);
                     const res = await this.shopifyClient.createProduct(shopifyData);
-                    shopifyId = `${res.id}`;
+                    shopifyId = res ? `${res.id}` : '';
                 }
 
                 // Update DB Status
