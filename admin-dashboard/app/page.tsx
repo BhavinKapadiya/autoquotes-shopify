@@ -4,6 +4,13 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
 // --- Types ---
+
+declare global {
+  interface Window {
+    shopify?: any;
+  }
+}
+
 interface PricingRule {
   manufacturer: string;
   markupPercentage: number;
