@@ -140,20 +140,25 @@ app.get('/api/manufacturers', async (req, res) => {
     }
 });
 
-app.get('/api/settings', (req, res) => {
+app.get('/api/settings', async (req, res) => {
     try {
-        const enabled = syncManager.getEnabledManufacturers();
+        const enabled = await syncManager.getEnabledManufacturers();
         res.json({ enabledManufacturers: enabled });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch settings' });
     }
 });
 
-app.post('/api/settings', (req, res) => {
+app.post('/api/settings', async (req, res) => {
     const { enabledManufacturers } = req.body;
     if (Array.isArray(enabledManufacturers)) {
-        syncManager.setEnabledManufacturers(enabledManufacturers);
-        res.json({ status: 'Settings saved' });
+        try {
+            await syncManager.setEnabledManufacturers(enabledManufacturers);
+            res.json({ status: 'Settings saved' });
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ error: 'Failed to save settings' });
+        }
     } else {
         res.status(400).json({ error: 'Invalid format' });
     }

@@ -2,8 +2,6 @@ import { AQClient } from './AQClient';
 import { ShopifyClient } from './ShopifyClient';
 import { PricingEngine } from './PricingEngine';
 import { AQProduct } from '../types';
-import * as fs from 'fs';
-import * as path from 'path';
 import { GoogleSheetsAdapter } from './GoogleSheetsAdapter';
 import { GoogleDriveAdapter } from './GoogleDriveAdapter';
 
@@ -13,7 +11,7 @@ export class SyncManager {
     private pricingEngine: PricingEngine;
     private googleSheets: GoogleSheetsAdapter;
     private googleDrive: GoogleDriveAdapter;
-    private stateFile = path.join(__dirname, '../../data/sync_state.json');
+    // private stateFile = path.join(__dirname, '../../data/sync_state.json'); // Legacy removed
 
     constructor(
         aqClient: AQClient,
@@ -27,53 +25,70 @@ export class SyncManager {
         this.pricingEngine = pricingEngine;
         this.googleSheets = googleSheets;
         this.googleDrive = googleDrive;
-        this.ensureDataDir();
+        // this.ensureDataDir(); // Legacy removed
     }
 
-    private ensureDataDir() {
-        const dir = path.dirname(this.stateFile);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-    }
+    private lastSyncDate: Date | null = null;
 
-    private getLastSync(): string | undefined {
-        if (fs.existsSync(this.stateFile)) {
-            const data = JSON.parse(fs.readFileSync(this.stateFile, 'utf-8'));
-            return data.lastSync;
-        }
-        return undefined;
-    }
-
-    private saveLastSync(date: string) {
-        fs.writeFileSync(this.stateFile, JSON.stringify({ lastSync: date }));
+    // Updated to use Settings model
+    private async saveLastSync(date: string) {
+        // Implement if tracking last full sync date in DB is needed
     }
 
     // --- Manufacturer Settings ---
 
-    getEnabledManufacturers(): string[] {
-        if (fs.existsSync(this.stateFile)) {
-            const data = JSON.parse(fs.readFileSync(this.stateFile, 'utf-8'));
+    async getEnabledManufacturers(): Promise<string[]> {
+        const Settings = require('../models/Settings').default;
+        try {
+            const settings = await Settings.findOne({ key: 'global_settings' });
             // Default to AARCO if nothing saved
-            return data.enabledManufacturers || ['78512195-9f0a-de11-b012-001ec95274b6'];
+            return settings?.enabledManufacturers || ['78512195-9f0a-de11-b012-001ec95274b6'];
+        } catch (error) {
+            console.error('Error fetching enabled manufacturers from DB:', error);
+            return ['78512195-9f0a-de11-b012-001ec95274b6'];
         }
-        return ['78512195-9f0a-de11-b012-001ec95274b6'];
     }
 
-    setEnabledManufacturers(ids: string[]) {
-        let data: any = {};
-        if (fs.existsSync(this.stateFile)) {
-            data = JSON.parse(fs.readFileSync(this.stateFile, 'utf-8'));
+    async setEnabledManufacturers(ids: string[]) {
+        const Settings = require('../models/Settings').default;
+        const Product = require('../models/Product').default;
+
+        try {
+            // 1. Get current list to detect removals
+            const currentSettings = await Settings.findOne({ key: 'global_settings' });
+            const currentIds: string[] = currentSettings?.enabledManufacturers || [];
+
+            // 2. Identify removed IDs
+            const removedIds = currentIds.filter(id => !ids.includes(id));
+
+            // 3. Save new list
+            await Settings.findOneAndUpdate(
+                { key: 'global_settings' },
+                { enabledManufacturers: ids },
+                { upsert: true, new: true }
+            );
+
+            // 4. Archive products from removed manufacturers
+            if (removedIds.length > 0) {
+                console.log(`Manufacturers disabled: ${removedIds.join(', ')}. Archiving products...`);
+                const result = await Product.updateMany(
+                    { aqMfrId: { $in: removedIds } },
+                    { status: 'archived' }
+                );
+                console.log(`Archived ${result.modifiedCount} products.`);
+            }
+
+        } catch (error) {
+            console.error('Error saving enabled manufacturers:', error);
+            throw error;
         }
-        data.enabledManufacturers = ids;
-        fs.writeFileSync(this.stateFile, JSON.stringify(data));
     }
 
     // --- New Staged Workflow ---
 
     async ingestFromAQ(forceFull: boolean = false) {
         console.log(`Starting INGEST from AQ... (Force Full: ${forceFull})`);
-        const enabledMfrs = this.getEnabledManufacturers();
+        const enabledMfrs = await this.getEnabledManufacturers();
 
         try {
             // 1. Fetch Lists from ALL enabled manufacturers
@@ -320,7 +335,7 @@ export class SyncManager {
 
         if (!isUUID) {
             console.log(`'${input}' is not a UUID. Searching full product list for Model Number...`);
-            const enabled = this.getEnabledManufacturers();
+            const enabled = await this.getEnabledManufacturers();
             let found: AQProduct | undefined;
             for (const mfrId of enabled) {
                 try {
