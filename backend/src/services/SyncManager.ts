@@ -89,7 +89,7 @@ export class SyncManager {
     }
 
     async syncArchivalsToShopify(mfrIds: string[]) {
-        console.log(`Syncing DELETIONS/ARCHIVALS for manufacturers: ${mfrIds.join(', ')}`);
+        console.log(`[DEBUG_COMMIT] Syncing DELETIONS/ARCHIVALS for manufacturers: ${mfrIds.join(', ')}`);
         const Product = require('../models/Product').default;
 
         // Find products that are 'archived' locally but have a Shopify ID (so they exist remotely)
