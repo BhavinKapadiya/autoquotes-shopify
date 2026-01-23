@@ -168,13 +168,7 @@ export class SyncManager {
                 categoryValues: aqProduct.categoryValues || [],
                 images: images,
                 productType: aqProduct.productCategory?.name || 'General',
-                // Keep status valid if it exists, else default to staged
-                // Actually, if we re-ingest, we probably want to keep it as-is unless we force reset?
-                // Let's not overwrite status if it's 'synced' unless price changed?
-                // For simplified flow: Always set to 'staged' on ingest implies "Review this update".
-                // But if syncing 1600 products, we don't want to re-review everything.
-                // Logic: If price or key data changed, set to staged?
-                // For now, let's JUST update data. Status management can be manual or implicit.
+                status: 'staged', // Force un-archive on new ingest
             };
 
             await Product.findOneAndUpdate(
