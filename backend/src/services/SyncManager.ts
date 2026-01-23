@@ -76,11 +76,42 @@ export class SyncManager {
                     { status: 'archived' }
                 );
                 console.log(`Archived ${result.modifiedCount} products.`);
+
+                // BACKGROUND JOB: Sync Archival to Shopify
+                // We don't await this so the UI response is fast, but we log errors.
+                this.syncArchivalsToShopify(removedIds).catch(err => console.error('Background archival failed:', err));
             }
 
         } catch (error) {
             console.error('Error saving enabled manufacturers:', error);
             throw error;
+        }
+    }
+
+    async syncArchivalsToShopify(mfrIds: string[]) {
+        console.log(`Syncing DELETIONS/ARCHIVALS for manufacturers: ${mfrIds.join(', ')}`);
+        const Product = require('../models/Product').default;
+
+        // Find products that are 'archived' locally but have a Shopify ID (so they exist remotely)
+        // We only care about products that have been synced at least once.
+        const productsToArchive = await Product.find({
+            aqMfrId: { $in: mfrIds },
+            status: 'archived',
+            shopifyId: { $exists: true, $ne: '' }
+        });
+
+        console.log(`Found ${productsToArchive.length} products to set to DRAFT on Shopify.`);
+
+        for (const product of productsToArchive) {
+            try {
+                // Set status to draft
+                await this.shopifyClient.updateProduct(Number(product.shopifyId), {
+                    status: 'draft'
+                });
+                console.log(`Set ${product.aqModelNumber} (ID: ${product.shopifyId}) to DRAFT.`);
+            } catch (err) {
+                console.error(`Failed to archive ${product.aqModelNumber} on Shopify:`, err);
+            }
         }
     }
 
@@ -190,8 +221,13 @@ export class SyncManager {
             productsToSync = await Product.find({ aqProductId: specificProductId });
         } else {
             // Sync everything that is 'staged' (or just everything for now as users want full sync)
-            // In true PIM, you only sync 'Approved'. Here we autosync 'staged' for MVP parity.
-            productsToSync = await Product.find({ status: { $in: ['staged', 'synced'] } });
+            // Also include 'archived' products that are on Shopify, to ensure they get set to Draft if they aren't already.
+            productsToSync = await Product.find({
+                $or: [
+                    { status: { $in: ['staged', 'synced'] } },
+                    { status: 'archived', shopifyId: { $exists: true, $ne: '' } }
+                ]
+            });
         }
 
         console.log(`Found ${productsToSync.length} products to sync.`);
@@ -241,7 +277,13 @@ export class SyncManager {
 
                 const options = customVariants.length > 0 ? [{ name: customVariants[0].optionName }] : undefined;
 
+                // Determine Shopify status
+                // If local status is 'archived', we set to 'draft'.
+                // If local status is 'staged'/'synced', we set to 'active'.
+                const shopifyStatus = product.status === 'archived' ? 'draft' : 'active';
+
                 const shopifyData = {
+                    status: shopifyStatus,
                     title: product.title,
                     body_html: bodyHtml,
                     vendor: product.aqMfrName,
@@ -271,7 +313,10 @@ export class SyncManager {
                 }
 
                 // Update DB Status
-                product.status = 'synced';
+                // Only mark as 'synced' if it's strictly active. If it was archived, leave it archived.
+                if (product.status !== 'archived') {
+                    product.status = 'synced';
+                }
                 product.shopifyId = shopifyId;
                 product.shopifyHandle = shopifyData.handle;
                 product.lastSynced = new Date();
