@@ -95,12 +95,13 @@ app.get('/api/products', async (req, res) => {
         const limit = 50;
         const skip = (page - 1) * limit;
 
-        const products = await Product.find()
+        const query = { status: { $ne: 'archived' } };
+        const products = await Product.find(query)
             .sort({ aqMfrName: 1, aqModelNumber: 1 })
             .skip(skip)
             .limit(limit);
 
-        const total = await Product.countDocuments();
+        const total = await Product.countDocuments(query);
 
         res.json({ products, total, page, pages: Math.ceil(total / limit) });
     } catch (error) {
