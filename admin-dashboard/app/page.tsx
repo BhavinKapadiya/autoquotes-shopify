@@ -18,7 +18,119 @@ interface PricingRule {
   discountChain?: string;
 }
 
-// ... existing code ...
+interface Manufacturer {
+  id: string;
+  name: string;
+}
+
+// --- Components ---
+
+function IngestStep({ onTrigger }: { onTrigger: () => void }) {
+  return (
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col items-start h-full relative overflow-hidden group">
+      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+        <span className="text-6xl">📥</span>
+      </div>
+      <div className="flex items-center mb-4">
+        <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded mr-2">STEP 1</span>
+        <h2 className="text-xl font-bold text-gray-900">Ingest Data</h2>
+      </div>
+      <p className="text-gray-500 mb-6 text-sm flex-grow">
+        Fetch the latest product data from AutoQuotes into your staging database. This does not affect your live store.
+      </p>
+      <button
+        onClick={onTrigger}
+        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-all shadow-md active:translate-y-0.5"
+      >
+        Start Ingest
+      </button>
+    </div>
+  );
+}
+
+function PricingStep({
+  manufacturers,
+  enabledMfrs,
+  toggleMfr,
+  setManufacturer,
+  loading
+}: {
+  manufacturers: Manufacturer[],
+  enabledMfrs: string[],
+  toggleMfr: (id: string) => void,
+  setManufacturer: (name: string) => void,
+  loading: boolean
+}) {
+  const [search, setSearch] = useState('');
+
+  const filtered = manufacturers.filter(m => (m.name || '').toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-full flex flex-col">
+      <div className="flex items-center mb-4">
+        <span className="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded mr-2">STEP 2</span>
+        <h2 className="text-xl font-bold text-gray-900">Configure Vendors</h2>
+      </div>
+      <p className="text-gray-500 mb-4 text-sm">
+        Enable vendors and set pricing rules. Click "Set Rule" to populate the form below.
+      </p>
+
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="Search Manufacturers..."
+        className="w-full text-sm p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none transition-all"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        disabled={loading}
+      />
+
+      {/* List */}
+      <div className="flex-grow overflow-y-auto custom-scrollbar border rounded-lg bg-gray-50 max-h-60">
+        {loading ? (
+          <div className="p-4 space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="animate-pulse flex space-x-4">
+                <div className="flex-1 space-y-2 py-1">
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                </div>
+              </div>
+            ))}
+            <div className="text-center text-xs text-gray-400 mt-2">Loading vendors...</div>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-4 text-center text-gray-400 text-sm">No vendors found.</div>
+        ) : (
+          <div className="divide-y divide-gray-200">
+            {filtered.map(m => (
+              <div key={m.id} className="p-3 flex items-center justify-between hover:bg-white transition-colors">
+                <span className="text-sm font-medium text-gray-700">{m.name}</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setManufacturer(m.name.toUpperCase())}
+                    className="text-xs px-2 py-1 rounded border border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:text-black transition-colors"
+                  >
+                    Set Rule
+                  </button>
+                  <button
+                    onClick={() => toggleMfr(m.id)}
+                    className={`text-xs px-2 py-1 rounded font-medium border ${enabledMfrs.includes(m.id)
+                      ? 'bg-green-50 text-green-700 border-green-200'
+                      : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
+                      }`}
+                  >
+                    {enabledMfrs.includes(m.id) ? 'Active' : 'Enable'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function PricingRuleForm({
   manufacturer,
