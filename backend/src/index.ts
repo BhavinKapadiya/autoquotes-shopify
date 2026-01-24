@@ -172,9 +172,15 @@ app.post('/api/settings', async (req, res) => {
 
 // Update Pricing Rule
 app.post('/api/pricing/rules', async (req, res) => {
-    const { manufacturer, markup } = req.body;
-    await pricingEngine.setRule(manufacturer, { manufacturer, markupPercentage: markup });
-    res.json({ status: 'Rule updated' });
+    const { manufacturer, markup, overridePrice, pricingMode, discountChain } = req.body;
+    await pricingEngine.setRule(manufacturer, {
+        manufacturer,
+        markupPercentage: markup,
+        overridePrice,
+        pricingMode,
+        discountChain
+    });
+    res.json({ success: true });
 });
 
 app.listen(port, () => {

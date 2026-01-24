@@ -159,12 +159,17 @@ export class SyncManager {
 
             // Calculate Price
             const basePrice = aqProduct.pricing?.listPrice || 0;
-            const finalPrice = this.pricingEngine.calculatePrice({
-                ...aqProduct,
+            const netPrice = aqProduct.pricing?.netPrice || 0;
+
+            const pricingResult = this.pricingEngine.calculatePrice({
                 ListPrice: basePrice,
+                NetPrice: netPrice,
                 Manufacturer: mfrName,
                 ModelNumber: modelNumber,
-            } as any);
+            });
+
+            const finalPrice = pricingResult.finalPrice;
+            const netCost = pricingResult.netCost;
 
             // Extract Spec Sheet
             let specSheetUrl = '';
@@ -194,6 +199,8 @@ export class SyncManager {
                 title: `${mfrName} ${modelNumber}`,
                 descriptionHtml: aqProduct.specifications?.longMarketingSpecification || aqProduct.specifications?.AQSpecification || '',
                 listPrice: basePrice,
+                aqNetPrice: netPrice, // Save raw AQ net
+                netCost: netCost, // Save calculated net cost
                 finalPrice: finalPrice,
                 specSheetUrl: specSheetUrl,
                 categoryValues: aqProduct.categoryValues || [],
@@ -349,15 +356,19 @@ export class SyncManager {
 
         let count = 0;
         for (const p of products) {
-            const finalPrice = this.pricingEngine.calculatePrice({
+            // Use stored aqNetPrice, fallback to list if missing (old data)
+            const aqNet = p.aqNetPrice || 0;
+
+            const pricingResult = this.pricingEngine.calculatePrice({
                 ListPrice: p.listPrice,
+                NetPrice: aqNet,
                 Manufacturer: p.aqMfrName,
                 ModelNumber: p.aqModelNumber
             });
 
-            p.finalPrice = finalPrice;
-            // Should we revert to 'staged' if it was 'synced'?
-            // If price changes, yes, it should be synced again.
+            p.finalPrice = pricingResult.finalPrice;
+            p.netCost = pricingResult.netCost;
+
             p.status = 'staged';
             await p.save();
             count++;

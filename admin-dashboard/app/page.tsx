@@ -14,121 +14,11 @@ declare global {
 interface PricingRule {
   manufacturer: string;
   markupPercentage: number;
+  pricingMode?: 'AQ_NET' | 'LIST_DISCOUNT';
+  discountChain?: string;
 }
 
-interface Manufacturer {
-  id: string;
-  name: string;
-}
-
-// --- Components ---
-
-function IngestStep({ onTrigger }: { onTrigger: () => void }) {
-  return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col items-start h-full relative overflow-hidden group">
-      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-        <span className="text-6xl">📥</span>
-      </div>
-      <div className="flex items-center mb-4">
-        <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded mr-2">STEP 1</span>
-        <h2 className="text-xl font-bold text-gray-900">Ingest Data</h2>
-      </div>
-      <p className="text-gray-500 mb-6 text-sm flex-grow">
-        Fetch the latest product data from AutoQuotes into your staging database. This does not affect your live store.
-      </p>
-      <button
-        onClick={onTrigger}
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-all shadow-md active:translate-y-0.5"
-      >
-        Start Ingest
-      </button>
-    </div>
-  );
-}
-
-function PricingStep({
-  manufacturers,
-  enabledMfrs,
-  toggleMfr,
-  setManufacturer,
-  loading
-}: {
-  manufacturers: Manufacturer[],
-  enabledMfrs: string[],
-  toggleMfr: (id: string) => void,
-  setManufacturer: (name: string) => void,
-  loading: boolean
-}) {
-  const [search, setSearch] = useState('');
-
-  const filtered = manufacturers.filter(m => (m.name || '').toLowerCase().includes(search.toLowerCase()));
-
-  return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-full flex flex-col">
-      <div className="flex items-center mb-4">
-        <span className="bg-yellow-100 text-yellow-800 text-xs font-bold px-2 py-1 rounded mr-2">STEP 2</span>
-        <h2 className="text-xl font-bold text-gray-900">Configure Vendors</h2>
-      </div>
-      <p className="text-gray-500 mb-4 text-sm">
-        Enable vendors and set pricing rules. Click "Set Rule" to populate the form below.
-      </p>
-
-      {/* Search */}
-      <input
-        type="text"
-        placeholder="Search Manufacturers..."
-        className="w-full text-sm p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none transition-all"
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        disabled={loading}
-      />
-
-      {/* List */}
-      <div className="flex-grow overflow-y-auto custom-scrollbar border rounded-lg bg-gray-50 max-h-60">
-        {loading ? (
-          <div className="p-4 space-y-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="animate-pulse flex space-x-4">
-                <div className="flex-1 space-y-2 py-1">
-                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                </div>
-              </div>
-            ))}
-            <div className="text-center text-xs text-gray-400 mt-2">Loading vendors...</div>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="p-4 text-center text-gray-400 text-sm">No vendors found.</div>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {filtered.map(m => (
-              <div key={m.id} className="p-3 flex items-center justify-between hover:bg-white transition-colors">
-                <span className="text-sm font-medium text-gray-700">{m.name}</span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setManufacturer(m.name.toUpperCase())}
-                    className="text-xs px-2 py-1 rounded border border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:text-black transition-colors"
-                  >
-                    Set Rule
-                  </button>
-                  <button
-                    onClick={() => toggleMfr(m.id)}
-                    className={`text-xs px-2 py-1 rounded font-medium border ${enabledMfrs.includes(m.id)
-                      ? 'bg-green-50 text-green-700 border-green-200'
-                      : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
-                      }`}
-                  >
-                    {enabledMfrs.includes(m.id) ? 'Active' : 'Enable'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+// ... existing code ...
 
 function PricingRuleForm({
   manufacturer,
@@ -137,9 +27,11 @@ function PricingRuleForm({
 }: {
   manufacturer: string,
   setManufacturer: (v: string) => void,
-  onSave: (markup: string) => void
+  onSave: (markup: string, mode: string, chain: string) => void
 }) {
   const [markup, setMarkup] = useState('');
+  const [mode, setMode] = useState<string>('AQ_NET');
+  const [chain, setChain] = useState('');
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-full">
@@ -152,13 +44,40 @@ function PricingRuleForm({
           <input
             type="text"
             value={manufacturer}
-            onChange={(e) => setManufacturer(e.target.value)} // Controlled input from parent state
+            onChange={(e) => setManufacturer(e.target.value)}
             className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-mono"
             placeholder="Select from list..."
           />
         </div>
+
         <div>
-          <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Markup %</label>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Pricing Mode</label>
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value)}
+            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all"
+          >
+            <option value="AQ_NET">AQ Net Price (Recommended)</option>
+            <option value="LIST_DISCOUNT">List Price - Discount Chain</option>
+          </select>
+        </div>
+
+        {mode === 'LIST_DISCOUNT' && (
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Discount Chain</label>
+            <input
+              type="text"
+              value={chain}
+              onChange={(e) => setChain(e.target.value)}
+              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all font-mono"
+              placeholder="e.g. 50/10/5"
+            />
+            <p className="text-xs text-gray-400 mt-1">Enter discounts separated by slashes (e.g. 50/10/5 = 50% off, then 10% off...)</p>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Plus Markup %</label>
           <div className="relative">
             <input
               type="number"
@@ -170,8 +89,9 @@ function PricingRuleForm({
             <span className="absolute left-3 top-3 text-gray-400 font-bold">+</span>
           </div>
         </div>
+
         <button
-          onClick={() => { onSave(markup); setMarkup(''); }}
+          onClick={() => { onSave(markup, mode, chain); setMarkup(''); setChain(''); }}
           disabled={!manufacturer || !markup}
           className="w-full bg-black hover:bg-gray-800 text-white font-medium py-3 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -276,12 +196,17 @@ export default function Home() {
     await authFetch('/api/settings', { method: 'POST', body: JSON.stringify({ enabledManufacturers: newSet }) });
   };
 
-  const handleSaveRule = async (markup: string) => {
+  const handleSaveRule = async (markup: string, mode: string, chain: string) => {
     if (!selectedManufacturer || !markup) return;
     try {
       await authFetch('/api/pricing/rules', {
         method: 'POST',
-        body: JSON.stringify({ manufacturer: selectedManufacturer, markup: Number(markup) }),
+        body: JSON.stringify({
+          manufacturer: selectedManufacturer,
+          markup: Number(markup),
+          pricingMode: mode,
+          discountChain: chain
+        }),
       });
       loadInitialData(); // Reload rules
       setSelectedManufacturer('');
@@ -355,11 +280,18 @@ export default function Home() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {rules.map((rule, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100 hover:shadow-sm transition-shadow">
-                      <span className="font-bold text-gray-700 truncate mr-2" title={rule.manufacturer}>{rule.manufacturer}</span>
-                      <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">
-                        +{rule.markupPercentage}%
-                      </span>
+                    <div key={idx} className="flex flex-col p-4 bg-gray-50 rounded-lg border border-gray-100 hover:shadow-sm transition-shadow">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="font-bold text-gray-700 truncate" title={rule.manufacturer}>{rule.manufacturer}</span>
+                        <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">
+                          +{rule.markupPercentage}% Markup
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {rule.pricingMode === 'LIST_DISCOUNT'
+                          ? `List less ${rule.discountChain || '0'}`
+                          : 'AQ Net Pricing'}
+                      </div>
                     </div>
                   ))}
                 </div>

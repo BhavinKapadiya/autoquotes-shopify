@@ -12,6 +12,8 @@ export interface IProduct extends Document {
 
     // Pricing
     listPrice: number;
+    aqNetPrice: number; // Raw AQ Net Price
+    netCost: number; // Base for markup
     costMarkup: number; // The rule applied
     finalPrice: number; // Calculated price
 
@@ -44,6 +46,8 @@ const ProductSchema: Schema = new Schema({
     specSheetUrl: { type: String },
 
     listPrice: { type: Number, default: 0 },
+    aqNetPrice: { type: Number, default: 0 }, // Raw AQ Net Price
+    netCost: { type: Number, default: 0 }, // Calculated Net Cost
     costMarkup: { type: Number, default: 0 },
     finalPrice: { type: Number, default: 0 },
 
