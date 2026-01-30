@@ -41,11 +41,11 @@ export class SyncManager {
         const Settings = require('../models/Settings').default;
         try {
             const settings = await Settings.findOne({ key: 'global_settings' });
-            // Default to AARCO if nothing saved
-            return settings?.enabledManufacturers || ['78512195-9f0a-de11-b012-001ec95274b6'];
+            // Return empty array if nothing saved
+            return settings?.enabledManufacturers || [];
         } catch (error) {
             console.error('Error fetching enabled manufacturers from DB:', error);
-            return ['78512195-9f0a-de11-b012-001ec95274b6'];
+            return [];
         }
     }
 

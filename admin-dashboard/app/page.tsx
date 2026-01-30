@@ -221,79 +221,84 @@ export default function Home() {
       <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key={process.env.NEXT_PUBLIC_SHOPIFY_API_KEY}></script>
 
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex justify-between items-end mb-8 border-b pb-6">
-          <div>
-            <h1 className="text-4xl font-black tracking-tighter text-gray-900">AQ Integration Manager</h1>
-            <p className="text-gray-500 mt-1 font-medium">AutoQuotes to Shopify Staged Synchronization</p>
-          </div>
-          <div className="text-right">
-            {loadState.status && (
-              <div className="text-sm font-bold text-indigo-600 animate-pulse">{loadState.status}</div>
-            )}
-            <div className="text-xs text-gray-400 mt-1">v2.1 Modal UI</div>
-          </div>
-        </div>
-
-        {/* Quick Actions Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <IngestStep onTrigger={handleIngest} loading={loadState.loading} />
-          <SyncStep />
-        </div>
-
-        {/* Manufacturer Configuration - Full Width Expanded Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          {/* Header */}
-          <div className="px-6 py-5 border-b border-gray-100">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        {/* Main Content Area */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6">
+          {/* Toolbar */}
+          <div className="px-6 py-5 border-b border-gray-100 space-y-4">
+            {/* Title Row */}
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-1 rounded">STEP 2</span>
-                <h2 className="text-xl font-bold text-gray-900">Configure Vendors</h2>
-                <span className="text-sm text-gray-400">({filteredManufacturers.length} vendors)</span>
+                <h2 className="text-xl font-bold text-gray-900">Manufacturers</h2>
+                <span className="text-sm text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full font-medium">{filteredManufacturers.length}</span>
               </div>
               
-              {/* Search */}
-              <div className="relative w-full sm:w-72">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Search manufacturers..."
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                />
-              </div>
+              {/* Status/Version Indicator */}
+               {loadState.status && (
+                <div className="text-sm font-bold text-indigo-600 animate-pulse">{loadState.status}</div>
+              )}
             </div>
-            
-            {/* Filter Tabs */}
-            <div className="flex gap-1 mt-4 bg-gray-100 p-1 rounded-lg w-fit">
-              {(['all', 'enabled', 'with_rules'] as FilterTab[]).map(tab => (
+
+            {/* Controls Row */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              {/* Filters (Left) */}
+              <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+                {(['all', 'enabled', 'with_rules'] as FilterTab[]).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                      activeTab === tab
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {tab === 'all' ? 'All' : tab === 'enabled' ? 'Enabled' : 'With Rules'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Actions (Right) */}
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                {/* Search */}
+                <div className="relative flex-grow md:flex-grow-0 md:w-64">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search manufacturers..."
+                    className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                </div>
+
+                {/* Start Ingest Button */}
                 <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
-                    activeTab === tab
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
+                  onClick={handleIngest}
+                  disabled={loadState.loading}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
                 >
-                  {tab === 'all' ? 'All' : tab === 'enabled' ? 'Enabled' : 'With Rules'}
+                  {loadState.loading ? (
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                  )}
+                  {loadState.loading ? 'Ingesting...' : 'Start Ingest'}
                 </button>
-              ))}
+              </div>
             </div>
           </div>
 
           {/* Table */}
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto h-[calc(100vh-250px)]">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Manufacturer</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Pricing Rule</th>
-                  <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-50">Manufacturer</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-50">Status</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-50">Pricing Rule</th>
+                  <th className="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-50">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">

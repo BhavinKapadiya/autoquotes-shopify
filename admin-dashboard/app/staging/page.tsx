@@ -601,7 +601,10 @@ export default function StagingPage() {
         setLoading(true);
         setError('');
         try {
-            const res = await axios.get(`${API_URL}/api/products?page=${p}`);
+            // Fetch all products (or enough to be useful) - Limitation: Verification needed if backend paginates heavily
+            // For now, assuming standard pagination but we filter on client side for the Dropdown UI request
+            // Ideally backend should support filtering, but for this task we implement UI filter on loaded page
+            const res = await axios.get(`${API_URL}/api/products?page=${p}&limit=500`); 
             setProducts(res.data.products);
             setPages(res.data.pages);
         } catch (err: any) {
@@ -611,6 +614,14 @@ export default function StagingPage() {
             setLoading(false);
         }
     };
+
+    // Client-side Manufacturer Filter
+    const [selectedMfr, setSelectedMfr] = useState<string>('All');
+    const uniqueMfrs = Array.from(new Set(products.map((p: any) => p.aqMfrName))).sort() as string[];
+    
+    const filteredProducts = selectedMfr === 'All' 
+        ? products 
+        : products.filter((p: any) => p.aqMfrName === selectedMfr);
 
     const triggerAction = async (endpoint: string, label: string) => {
         if (!confirm(`Are you sure you want to ${label}?`)) return;
@@ -683,50 +694,34 @@ export default function StagingPage() {
                         <p className="text-gray-500">Review and approve products before syncing to Shopify.</p>
                     </div>
                     
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap gap-3">
-                        <button
-                            onClick={() => triggerAction('ingest', 'Ingest from AQ')}
-                            disabled={actionLoading !== null}
-                            className="inline-flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {actionLoading === 'ingest' ? (
-                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                </svg>
-                            ) : (
-                                <span className="w-5 h-5 flex items-center justify-center bg-indigo-500 rounded text-xs font-bold">1</span>
-                            )}
-                            Ingest
-                        </button>
-                        <button
-                            onClick={() => triggerAction('pricing/apply', 'Apply Pricing Rules')}
-                            disabled={actionLoading !== null}
-                            className="inline-flex items-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {actionLoading === 'pricing/apply' ? (
-                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                </svg>
-                            ) : (
-                                <span className="w-5 h-5 flex items-center justify-center bg-indigo-500 rounded text-xs font-bold">2</span>
-                            )}
-                            Apply Rules
-                        </button>
+                    {/* Header Controls: Manufacturer Filter */}
+                    <div className="flex flex-wrap gap-4 items-center">
+                        <div className="relative min-w-[240px]">
+                            <select 
+                                value={selectedMfr}
+                                onChange={(e) => setSelectedMfr(e.target.value)}
+                                className="w-full appearance-none bg-white border border-gray-300 text-gray-700 py-2.5 px-4 pr-8 rounded-lg leading-tight focus:outline-none focus:bg-white focus:border-indigo-500 text-sm font-medium shadow-sm transition-all hover:border-gray-400 cursor-pointer"
+                            >
+                                <option value="All">All Manufacturers ({products.length})</option>
+                                {uniqueMfrs.map(mfr => (
+                                    <option key={mfr} value={mfr}>{mfr}</option>
+                                ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-500">
+                                <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                            </div>
+                        </div>
+
+                        {/* Sync Button */}
                         <button
                             onClick={() => triggerAction('sync', 'Sync to Shopify')}
                             disabled={actionLoading !== null}
-                            className="inline-flex items-center gap-2 bg-gray-900 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center gap-2 bg-gray-900 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                         >
                             {actionLoading === 'sync' ? (
-                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                </svg>
+                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
                             ) : (
-                                <span className="w-5 h-5 flex items-center justify-center bg-gray-700 rounded text-xs font-bold">3</span>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                             )}
                             Sync to Shopify
                         </button>
@@ -789,20 +784,20 @@ export default function StagingPage() {
                                         <td className="px-6 py-5"><div className="h-8 bg-gray-200 rounded w-24 ml-auto"></div></td>
                                     </tr>
                                 ))
-                            ) : products.length === 0 ? (
+                            ) : filteredProducts.length === 0 ? (
                                 <tr>
                                     <td colSpan={6} className="px-6 py-16 text-center">
                                         <div className="text-gray-400">
                                             <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-                                            </svg>
-                                            <p className="font-medium">No products staged yet</p>
-                                            <p className="text-sm mt-1">Click "Ingest" to import products from AutoQuotes</p>
-                                        </div>
+                                             </svg>
+                                             <p className="font-medium">No products found</p>
+                                             <p className="text-sm mt-1">{products.length === 0 ? 'Click "Ingest" to import products' : 'Try selecting a different manufacturer'}</p>
+                                         </div>
                                     </td>
                                 </tr>
                             ) : (
-                                products.map((p: any) => (
+                                filteredProducts.map((p: any) => (
                                     <tr key={p._id} className="hover:bg-gray-50 transition-colors">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
