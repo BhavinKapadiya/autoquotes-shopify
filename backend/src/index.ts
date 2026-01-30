@@ -14,6 +14,7 @@ import { SyncManager } from './services/SyncManager';
 import { GoogleSheetsAdapter } from './services/GoogleSheetsAdapter';
 import { GoogleDriveAdapter } from './services/GoogleDriveAdapter';
 import { Database } from './services/Database';
+import imageUploadRouter from './routes/imageUpload';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -26,7 +27,7 @@ const shopify = shopifyApp({
     api: {
         apiKey: process.env.SHOPIFY_API_KEY,
         apiSecretKey: process.env.SHOPIFY_API_SECRET,
-        scopes: ['read_products', 'write_products'],
+        scopes: ['read_products', 'write_products', 'write_files', 'read_files'],
         hostName: process.env.HOST?.replace(/https?:\/\//, '') || 'localhost:5000',
         apiVersion: ApiVersion.October24,
         isEmbeddedApp: true,
@@ -47,6 +48,9 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Shopify-Access-Token']
 }));
 app.use(express.json());
+
+// Image Upload Routes
+app.use('/api/products', imageUploadRouter);
 
 // Initialize Services
 const aqClient = new AQClient(process.env.AQ_API_KEY || '');
