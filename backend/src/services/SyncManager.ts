@@ -109,8 +109,15 @@ export class SyncManager {
                     status: 'draft'
                 });
                 console.log(`Set ${product.aqModelNumber} (ID: ${product.shopifyId}) to DRAFT.`);
-            } catch (err) {
-                console.error(`Failed to archive ${product.aqModelNumber} on Shopify:`, err);
+            } catch (err: any) {
+                if (err.response?.statusCode === 404 || err.response?.code === 404 || err.message?.includes('404')) {
+                    console.log(`Product ${product.aqModelNumber} already deleted/not found on Shopify. Considering archived.`);
+                    // Optional: Clear shopifyId since it's invalid
+                    // product.shopifyId = '';
+                    // await product.save();
+                } else {
+                    console.error(`Failed to archive ${product.aqModelNumber} on Shopify:`, err);
+                }
             }
         }
     }
