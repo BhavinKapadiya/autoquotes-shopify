@@ -17,60 +17,66 @@ function ImageUploadModal({
     onClose: () => void; 
     onSuccess: () => void;
 }) {
+    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+    const [previews, setPreviews] = useState<string[]>([]);
     const [uploading, setUploading] = useState(false);
-    const [error, setError] = useState('');
-    const [preview, setPreview] = useState<string | null>(null);
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [error, setError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Reset state when modal opens/closes
     useEffect(() => {
         if (!isOpen) {
-            setPreview(null);
-            setSelectedFile(null);
-            setError('');
+            setPreviews([]);
+            setSelectedFiles([]);
+            setError(null);
             setUploading(false);
         }
     }, [isOpen]);
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+        if (e.target.files && e.target.files.length > 0) {
+            const files = Array.from(e.target.files);
+            const validFiles: File[] = [];
+            const newPreviews: string[] = [];
+            
+            // Reset previous selection
+            previews.forEach(url => URL.revokeObjectURL(url));
 
-        // Validate file type
-        const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-        if (!validTypes.includes(file.type)) {
-            setError('Please select a valid image (JPEG, PNG, GIF, or WebP)');
-            return;
+            // Validate and process files
+            for (const file of files) {
+                const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+                if (!validTypes.includes(file.type)) {
+                    setError(`File ${file.name} is not a valid image type`);
+                    continue;
+                }
+                if (file.size > 10 * 1024 * 1024) {
+                    setError(`File ${file.name} is too large (max 10MB)`);
+                    continue;
+                }
+                validFiles.push(file);
+                newPreviews.push(URL.createObjectURL(file));
+            }
+
+            if (validFiles.length > 0) {
+                setSelectedFiles(validFiles);
+                setPreviews(newPreviews);
+                setError(null);
+            }
         }
-
-        // Validate file size (10MB)
-        if (file.size > 10 * 1024 * 1024) {
-            setError('Image must be less than 10MB');
-            return;
-        }
-
-        setSelectedFile(file);
-        setError('');
-
-        // Create preview
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setPreview(reader.result as string);
-        };
-        reader.readAsDataURL(file);
     };
 
     const handleUpload = async () => {
-        if (!selectedFile || !product) return;
+        if (selectedFiles.length === 0 || !product) return;
 
         setUploading(true);
-        setError('');
+        setError(null);
+
+        const formData = new FormData();
+        selectedFiles.forEach((file) => {
+            formData.append('images', file);
+        });
 
         try {
-            const formData = new FormData();
-            formData.append('image', selectedFile);
-
             await axios.post(
                 `${API_URL}/api/products/${product._id}/image`,
                 formData,
@@ -85,11 +91,18 @@ function ImageUploadModal({
             onClose();
         } catch (err: any) {
             console.error('Upload error:', err);
-            setError(err.response?.data?.details || err.message || 'Failed to upload image');
+            setError(err.response?.data?.details || err.message || 'Failed to upload images');
         } finally {
             setUploading(false);
         }
     };
+
+    // Cleanup previews on unmount
+    useEffect(() => {
+        return () => {
+            previews.forEach(url => URL.revokeObjectURL(url));
+        };
+    }, [previews]);
 
     if (!isOpen || !product) return null;
 
@@ -102,113 +115,123 @@ function ImageUploadModal({
             />
             
             {/* Modal */}
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 animate-scale-in">
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 animate-scale-in max-h-[90vh] overflow-y-auto">
                 {/* Header */}
-                <div className="px-6 py-5 border-b border-gray-100">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h2 className="text-xl font-bold text-gray-900">Change Image</h2>
-                            <p className="text-sm text-gray-500 mt-0.5 truncate max-w-[280px]">{product.title}</p>
-                        </div>
-                        <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
+                <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-900">Add Images</h2>
+                        <p className="text-sm text-gray-500 mt-0.5 truncate max-w-[280px]">{product.title}</p>
                     </div>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
                 </div>
 
                 {/* Body */}
                 <div className="px-6 py-5">
-                    {/* Current Image */}
-                    <div className="mb-4">
-                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Current Image</label>
-                        <div className="w-24 h-24 rounded-lg border-2 border-gray-200 overflow-hidden bg-gray-50">
-                            {product.images && product.images[0] ? (
-                                <img 
-                                    src={product.images[0].src || 'data:image/svg+xml;base64,' + product.images[0].attachment} 
-                                    alt="" 
-                                    className="w-full h-full object-cover"
-                                />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                    </svg>
-                                </div>
-                            )}
-                        </div>
+                    {/* Current Images */}
+                    <div className="mb-6">
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Current Images</label>
+                        {product.images && product.images.length > 0 ? (
+                            <div className="grid grid-cols-4 gap-2">
+                                {product.images.map((img: any, idx: number) => (
+                                    <div key={idx} className="aspect-square rounded-lg border border-gray-200 overflow-hidden bg-gray-50 relative group">
+                                        <img 
+                                            src={img.src || 'data:image/svg+xml;base64,' + img.attachment} 
+                                            alt="" 
+                                            className="w-full h-full object-cover"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-sm text-gray-400 italic">No images currently set.</div>
+                        )}
                     </div>
 
                     {/* Upload Area */}
                     <div className="mb-4">
-                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">New Image</label>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">New Images</label>
                         <input
                             ref={fileInputRef}
                             type="file"
+                            multiple
                             accept="image/jpeg,image/png,image/gif,image/webp"
                             onChange={handleFileSelect}
                             className="hidden"
                         />
                         
-                        {preview ? (
-                            <div className="relative">
-                                <img src={preview} alt="Preview" className="w-full h-48 object-contain rounded-lg border-2 border-indigo-200 bg-gray-50" />
-                                <button
-                                    onClick={() => { setPreview(null); setSelectedFile(null); }}
-                                    className="absolute top-2 right-2 p-1 bg-white rounded-full shadow hover:bg-gray-100"
-                                >
-                                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
+                        {previews.length > 0 ? (
+                            <div className="mb-4">
+                                <div className="grid grid-cols-3 gap-3 mb-3">
+                                    {previews.map((preview, idx) => (
+                                        <div key={idx} className="relative aspect-square">
+                                            <img src={preview} alt={`Preview ${idx}`} className="w-full h-full object-cover rounded-lg border border-indigo-200 bg-gray-50" />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex justify-end">
+                                    <button
+                                        onClick={() => { setPreviews([]); setSelectedFiles([]); }}
+                                        className="text-xs text-red-600 hover:text-red-700 font-medium"
+                                    >
+                                        Clear Selection
+                                    </button>
+                                </div>
                             </div>
                         ) : (
-                            <button
+                            <div 
                                 onClick={() => fileInputRef.current?.click()}
-                                className="w-full h-32 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
+                                className="w-full h-32 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all group"
                             >
-                                <svg className="w-8 h-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
-                                <span className="text-sm text-gray-500">Click to select image</span>
-                                <span className="text-xs text-gray-400 mt-1">JPEG, PNG, GIF, WebP (max 10MB)</span>
-                            </button>
+                                <div className="p-3 bg-gray-50 rounded-full group-hover:bg-white transition-colors mb-2">
+                                    <svg className="w-6 h-6 text-gray-400 group-hover:text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                </div>
+                                <span className="text-sm font-medium text-gray-600 group-hover:text-indigo-600">Click to select images</span>
+                                <span className="text-xs text-gray-400 mt-1">JPEG, PNG, WEBP up to 10MB</span>
+                            </div>
                         )}
                     </div>
 
-                    {/* Error */}
+                    {/* Actions */}
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button
+                            onClick={onClose}
+                            className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleUpload}
+                            disabled={selectedFiles.length === 0 || uploading}
+                            className="px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadowed-button"
+                        >
+                            {uploading ? (
+                                <>
+                                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                    </svg>
+                                    Uploading {selectedFiles.length} {selectedFiles.length === 1 ? 'Image' : 'Images'}...
+                                </>
+                            ) : (
+                                'Upload Images'
+                            )}
+                        </button>
+                    </div>
+                    
                     {error && (
-                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 mb-4">
+                        <div className="mt-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2 animate-shake">
+                            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
                             {error}
                         </div>
                     )}
-                </div>
-
-                {/* Footer */}
-                <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
-                    <button
-                        onClick={onClose}
-                        disabled={uploading}
-                        className="flex-1 px-4 py-3 border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={handleUpload}
-                        disabled={uploading || !selectedFile}
-                        className="flex-1 px-4 py-3 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    >
-                        {uploading ? (
-                            <>
-                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                </svg>
-                                Uploading...
-                            </>
-                        ) : 'Upload Image'}
-                    </button>
                 </div>
             </div>
         </div>

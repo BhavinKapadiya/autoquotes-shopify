@@ -184,13 +184,17 @@ async function uploadToShopifyFiles(fileBuffer: Buffer, filename: string, mimeTy
  * POST /api/products/:productId/image
  * Upload a new image for a product
  */
-router.post('/:productId/image', upload.single('image'), async (req, res) => {
+/**
+ * POST /api/products/:productId/image
+ * Upload new images for a product (Support Multiple)
+ */
+router.post('/:productId/image', upload.array('images', 10), async (req, res) => {
     try {
         const { productId } = req.params;
-        const file = req.file;
+        const files = req.files as Express.Multer.File[];
 
-        if (!file) {
-            return res.status(400).json({ error: 'No image file provided' });
+        if (!files || files.length === 0) {
+            return res.status(400).json({ error: 'No image files provided' });
         }
 
         // Find product
@@ -199,24 +203,43 @@ router.post('/:productId/image', upload.single('image'), async (req, res) => {
             return res.status(404).json({ error: 'Product not found' });
         }
 
-        console.log(`📸 Uploading image for product: ${product.title}`);
+        console.log(`📸 Uploading ${files.length} images for product: ${product.title}`);
 
-        // Upload to Shopify Files
-        const imageUrl = await uploadToShopifyFiles(
-            file.buffer,
-            file.originalname,
-            file.mimetype
-        );
+        const uploadedUrls: string[] = [];
+        const errors: string[] = [];
 
-        console.log(`✅ Image uploaded to Shopify: ${imageUrl}`);
+        // Upload each file to Shopify Files
+        for (const file of files) {
+            try {
+                const imageUrl = await uploadToShopifyFiles(
+                    file.buffer,
+                    file.originalname,
+                    file.mimetype
+                );
+                uploadedUrls.push(imageUrl);
+                console.log(`✅ Image uploaded to Shopify: ${imageUrl}`);
+            } catch (err: any) {
+                console.error(`❌ Failed to upload ${file.originalname}:`, err.message);
+                errors.push(`${file.originalname}: ${err.message}`);
+            }
+        }
+
+        if (uploadedUrls.length === 0) {
+            return res.status(500).json({ 
+                error: 'Failed to upload any images',
+                details: errors
+            });
+        }
 
         // Update product in database
-        // Replace the first image or add if no images exist
-        if (product.images && product.images.length > 0) {
-            product.images[0] = { src: imageUrl };
-        } else {
-            product.images = [{ src: imageUrl }];
+        // Append new images to the existing list
+        if (!product.images) {
+            product.images = [];
         }
+
+        // Add new images
+        const newImages = uploadedUrls.map(url => ({ src: url }));
+        product.images.push(...newImages);
 
         // Mark as staged so it gets synced
         product.status = 'staged';
@@ -224,14 +247,15 @@ router.post('/:productId/image', upload.single('image'), async (req, res) => {
 
         res.json({
             success: true,
-            imageUrl: imageUrl,
-            message: 'Image uploaded successfully'
+            imageUrls: uploadedUrls,
+            message: `Successfully uploaded ${uploadedUrls.length} images`,
+            errors: errors.length > 0 ? errors : undefined
         });
 
     } catch (error: any) {
         console.error('Image upload error:', error);
         res.status(500).json({
-            error: 'Failed to upload image',
+            error: 'Failed to upload images',
             details: error.message
         });
     }
