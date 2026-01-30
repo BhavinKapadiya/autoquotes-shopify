@@ -21,6 +21,7 @@ function ImageUploadModal({
     const [previews, setPreviews] = useState<string[]>([]);
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [loadingId, setLoadingId] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Reset state when modal opens/closes
@@ -30,8 +31,26 @@ function ImageUploadModal({
             setSelectedFiles([]);
             setError(null);
             setUploading(false);
+            setLoadingId(null);
         }
     }, [isOpen]);
+
+    const handleDeleteImage = async (imageUrl: string) => {
+        if (!confirm('Are you sure you want to delete this image?')) return;
+        
+        setLoadingId(imageUrl);
+        try {
+            await axios.delete(`${API_URL}/api/products/${product._id}/images`, {
+                data: { imageUrl }
+            });
+            onSuccess();
+        } catch (err: any) {
+            console.error(err);
+            alert('Failed to delete image');
+        } finally {
+            setLoadingId(null);
+        }
+    };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
@@ -143,7 +162,7 @@ function ImageUploadModal({
                     <div className="mb-6">
                         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Current Images</label>
                         {product.images && product.images.length > 0 ? (
-                            <div className="grid grid-cols-4 gap-2">
+                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-3">
                                 {product.images.map((img: any, idx: number) => (
                                     <div key={idx} className="aspect-square rounded-lg border border-gray-200 overflow-hidden bg-gray-50 relative group">
                                         <img 
@@ -151,6 +170,19 @@ function ImageUploadModal({
                                             alt="" 
                                             className="w-full h-full object-cover"
                                         />
+                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                                            {loadingId === img.src ? (
+                                                <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                            ) : (
+                                                <button 
+                                                    onClick={() => handleDeleteImage(img.src)}
+                                                    className="p-1.5 bg-white/90 rounded-full text-red-500 opacity-0 group-hover:opacity-100 transform scale-90 group-hover:scale-100 transition-all hover:bg-red-50"
+                                                    title="Delete Image"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -310,7 +342,11 @@ function ManageVariantsModal({
         if (isOpen && product) {
             fetchVariants();
             // Pre-fill SKU based on product
-            setNewVariant(prev =>({ ...prev, sku: product.aqModelNumber, price: product.finalPrice?.toString() || '' }));
+            setNewVariant(prev =>({ 
+                ...prev, 
+                sku: product.aqModelNumber || '', 
+                price: product.finalPrice?.toString() || '' 
+            }));
         }
     }, [isOpen, product]);
 
@@ -341,7 +377,7 @@ function ManageVariantsModal({
 
         setVariants([...variants, variant]);
         
-        // Reset value fields but keep option names for consistency
+        // Reset value fields but keep option names/sku/price for easier bulk entry
         setNewVariant(prev => ({
             ...prev,
             value1: '',
@@ -375,110 +411,139 @@ function ManageVariantsModal({
     if (!isOpen || !product) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
+             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
                 
                 {/* Header */}
-                <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
+                <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
                     <div>
                         <h2 className="text-xl font-bold text-gray-900">Manage Variants</h2>
-                        <p className="text-sm text-gray-500 mt-0.5">{product.title}</p>
+                        <p className="text-sm text-gray-500 mt-1">{product.title}</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 transition-colors">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
 
                 {/* Body */}
-                <div className="flex-1 p-6 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto p-8 bg-gray-50/50">
                     
                     {/* Add Variant Form */}
-                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6">
-                        <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">Add New Variant</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-500 mb-1">Option Name</label>
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-8">
+                        <div className="flex items-center gap-2 mb-5">
+                            <div className="bg-indigo-100 p-2 rounded-lg">
+                                <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                            </div>
+                            <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Add New Variant</h3>
+                        </div>
+
+                        <div className="grid grid-cols-12 gap-4 items-end mb-4">
+                            {/* Option Name ex: Size */}
+                            <div className="col-span-3">
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Option Name</label>
                                 <input 
                                     type="text" 
-                                    placeholder="Size, Color, etc." 
-                                    className="w-full text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                    placeholder="e.g. Size, Color" 
+                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-gray-300"
                                     value={newVariant.option1}
                                     onChange={e => setNewVariant({...newVariant, option1: e.target.value})}
                                 />
                             </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-500 mb-1">Option Value <span className="text-red-500">*</span></label>
+
+                            {/* Option Value ex: Small */}
+                            <div className="col-span-4">
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Option Value <span className="text-red-500">*</span></label>
                                 <input 
                                     type="text" 
-                                    placeholder="Small, Red, etc." 
-                                    className="w-full text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                    placeholder="e.g. Small, Red, 10-Pack" 
+                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                                     value={newVariant.value1}
                                     onChange={e => setNewVariant({...newVariant, value1: e.target.value})}
                                 />
                             </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-500 mb-1">Price <span className="text-red-500">*</span></label>
+
+                            {/* Price */}
+                            <div className="col-span-2">
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">Price <span className="text-red-500">*</span></label>
                                 <div className="relative">
-                                    <span className="absolute left-3 top-2 text-gray-500">$</span>
+                                    <span className="absolute left-3 top-2 text-gray-400">$</span>
                                     <input 
                                         type="number" 
-                                        className="w-full pl-6 text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                        className="w-full pl-7 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                                         value={newVariant.price}
                                         onChange={e => setNewVariant({...newVariant, price: e.target.value})}
                                     />
                                 </div>
                             </div>
-                            <div>
-                                <label className="block text-xs font-semibold text-gray-500 mb-1">SKU</label>
+                            
+                            {/* SKU */}
+                            <div className="col-span-3">
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">SKU</label>
                                 <input 
                                     type="text" 
-                                    className="w-full text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                                     value={newVariant.sku}
                                     onChange={e => setNewVariant({...newVariant, sku: e.target.value})}
                                 />
                             </div>
                         </div>
-                        <div className="flex justify-end">
+
+                        <div className="flex justify-end pt-2">
                             <button 
                                 onClick={handleAddVariant}
-                                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 text-sm shadow-sm"
+                                className="px-5 py-2.5 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 text-sm shadow-sm transition-all hover:shadow-md flex items-center gap-2"
                             >
-                                + Add to List
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                                Add to List
                             </button>
                         </div>
                     </div>
 
                     {/* Variants Table */}
-                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50 flex justify-between items-center">
+                            <h3 className="text-sm font-bold text-gray-900">Current Variants</h3>
+                            <span className="text-xs font-medium bg-gray-200 text-gray-600 px-2 py-1 rounded-full">{variants.length} items</span>
+                        </div>
+                        
                         <table className="w-full text-sm text-left">
                             <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200">
                                 <tr>
-                                    <th className="px-4 py-3">Variant Option</th>
-                                    <th className="px-4 py-3">SKU</th>
-                                    <th className="px-4 py-3">Price</th>
-                                    <th className="px-4 py-3 text-right">Actions</th>
+                                    <th className="px-6 py-3 w-[40%]">Variant Name / Option</th>
+                                    <th className="px-6 py-3 w-[25%]">SKU</th>
+                                    <th className="px-6 py-3 w-[20%]">Price</th>
+                                    <th className="px-6 py-3 w-[15%] text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {loading ? (
-                                    <tr><td colSpan={4} className="p-4 text-center text-gray-500">Loading elements...</td></tr>
+                                    <tr><td colSpan={4} className="p-8 text-center text-gray-400">Loading variants...</td></tr>
                                 ) : variants.length === 0 ? (
-                                    <tr><td colSpan={4} className="p-8 text-center text-gray-400 italic">No variants active. Product uses default single variant.</td></tr>
+                                    <tr>
+                                        <td colSpan={4} className="p-12 text-center">
+                                            <div className="flex flex-col items-center justify-center text-gray-400">
+                                                <svg className="w-12 h-12 mb-3 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                                                <p className="font-medium">No variants defined yet.</p>
+                                                <p className="text-xs mt-1">Add variants above to manage different version of this product.</p>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 ) : (
                                     variants.map((v, i) => (
-                                        <tr key={i} className="hover:bg-gray-50">
-                                            <td className="px-4 py-3 font-medium text-gray-900">
-                                                {v.option1}: {v.value1} 
-                                                {v.value2 && <span className="text-gray-400 mx-1">|</span>} 
-                                                {v.value2}
+                                        <tr key={i} className="hover:bg-gray-50 transition-colors group">
+                                            <td className="px-6 py-4 font-medium text-gray-900">
+                                                <div className="flex flex-col">
+                                                    <span className="font-semibold text-gray-800">{v.value1}</span>
+                                                    {(v.option1 && v.option1 !== 'Size' && v.option1 !== 'Color') && <span className="text-xs text-gray-400">{v.option1}</span>}
+                                                </div>
                                             </td>
-                                            <td className="px-4 py-3 text-gray-500 font-mono text-xs">{v.sku}</td>
-                                            <td className="px-4 py-3 text-gray-900 font-medium">${Number(v.price).toFixed(2)}</td>
-                                            <td className="px-4 py-3 text-right">
+                                            <td className="px-6 py-4 text-gray-500 font-mono text-xs">{v.sku}</td>
+                                            <td className="px-6 py-4 text-gray-900 font-medium">${Number(v.price).toFixed(2)}</td>
+                                            <td className="px-6 py-4 text-right">
                                                 <button 
                                                     onClick={() => handleDeleteVariant(i)}
-                                                    className="text-red-500 hover:text-red-700 font-medium text-xs"
+                                                    className="text-gray-400 hover:text-red-600 font-medium text-xs px-3 py-1.5 rounded hover:bg-red-50 transition-colors"
                                                 >
                                                     Remove
                                                 </button>
@@ -492,15 +557,19 @@ function ManageVariantsModal({
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50 rounded-b-2xl">
-                    <button onClick={onClose} className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-200 rounded-lg transition-colors">Cancel</button>
+                <div className="px-8 py-5 border-t border-gray-100 flex justify-end gap-3 bg-white">
+                    <button onClick={onClose} className="px-5 py-2.5 text-gray-700 font-medium hover:bg-gray-100 rounded-lg transition-colors text-sm">Cancel</button>
                     <button 
                         onClick={handleSave}
                         disabled={saving}
-                        className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                        className="px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-2 text-sm shadow-md shadow-indigo-200"
                     >
-                        {saving && <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
-                        Save Variants
+                        {saving ? (
+                            <>
+                                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                Saving Changes...
+                            </>
+                        ) : 'Save Variants'}
                     </button>
                 </div>
 

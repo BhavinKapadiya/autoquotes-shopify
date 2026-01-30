@@ -261,4 +261,46 @@ router.post('/:productId/image', upload.array('images', 10), async (req, res) =>
     }
 });
 
+/**
+ * DELETE /api/products/:productId/images
+ * Remove an image from a product
+ */
+router.delete('/:productId/images', async (req, res) => {
+    try {
+        const { productId } = req.params;
+        const { imageUrl } = req.body;
+
+        if (!imageUrl) {
+            return res.status(400).json({ error: 'Image URL is required' });
+        }
+
+        const product = await Product.findById(productId);
+        if (!product) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+
+        if (!product.images) {
+            return res.status(400).json({ error: 'Product has no images' });
+        }
+
+        // Filter out the image
+        const originalLength = product.images.length;
+        product.images = product.images.filter(img => img.src !== imageUrl);
+
+        if (product.images.length === originalLength) {
+            return res.status(400).json({ error: 'Image not found in product' });
+        }
+
+        // Mark as staged
+        product.status = 'staged';
+        await product.save();
+
+        res.json({ success: true, message: 'Image removed', images: product.images });
+
+    } catch (error) {
+        console.error('Error deleting image:', error);
+        res.status(500).json({ error: 'Failed to delete image' });
+    }
+});
+
 export default router;
