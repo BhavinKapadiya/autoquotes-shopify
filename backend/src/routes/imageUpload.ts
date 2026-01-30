@@ -268,10 +268,10 @@ router.post('/:productId/image', upload.array('images', 10), async (req, res) =>
 router.delete('/:productId/images', async (req, res) => {
     try {
         const { productId } = req.params;
-        const { imageUrl } = req.body;
+        const { imageUrl, imageId } = req.body;
 
-        if (!imageUrl) {
-            return res.status(400).json({ error: 'Image URL is required' });
+        if (!imageUrl && !imageId) {
+            return res.status(400).json({ error: 'Image URL or ID is required' });
         }
 
         const product = await Product.findById(productId);
@@ -279,13 +279,20 @@ router.delete('/:productId/images', async (req, res) => {
             return res.status(404).json({ error: 'Product not found' });
         }
 
-        if (!product.images) {
+        if (!product.images || product.images.length === 0) {
             return res.status(400).json({ error: 'Product has no images' });
         }
 
         // Filter out the image
         const originalLength = product.images.length;
-        product.images = product.images.filter(img => img.src !== imageUrl);
+        
+        if (imageId) {
+            product.images = product.images.filter(img => 
+                (img as any)._id?.toString() !== imageId
+            );
+        } else {
+            product.images = product.images.filter(img => img.src !== imageUrl);
+        }
 
         if (product.images.length === originalLength) {
             return res.status(400).json({ error: 'Image not found in product' });
