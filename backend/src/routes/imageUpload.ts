@@ -188,126 +188,155 @@ async function uploadToShopifyFiles(fileBuffer: Buffer, filename: string, mimeTy
  * POST /api/products/:productId/image
  * Upload new images for a product (Support Multiple)
  */
-router.post('/:productId/image', upload.array('images', 10), async (req, res) => {
-    try {
-        const { productId } = req.params;
-        const files = req.files as Express.Multer.File[];
+import { SyncManager } from '../services/SyncManager';
 
-        if (!files || files.length === 0) {
-            return res.status(400).json({ error: 'No image files provided' });
-        }
+export const createImageUploadRouter = (syncManager: SyncManager) => {
+    const router = Router();
 
-        // Find product
-        const product = await Product.findById(productId);
-        if (!product) {
-            return res.status(404).json({ error: 'Product not found' });
-        }
+    /**
+     * POST /api/products/:productId/image
+     * Upload new images for a product (Support Multiple)
+     */
+    router.post('/:productId/image', upload.array('images', 10), async (req, res) => {
+        try {
+            const { productId } = req.params;
+            const files = req.files as Express.Multer.File[];
 
-        console.log(`📸 Uploading ${files.length} images for product: ${product.title}`);
-
-        const uploadedUrls: string[] = [];
-        const errors: string[] = [];
-
-        // Upload each file to Shopify Files
-        for (const file of files) {
-            try {
-                const imageUrl = await uploadToShopifyFiles(
-                    file.buffer,
-                    file.originalname,
-                    file.mimetype
-                );
-                uploadedUrls.push(imageUrl);
-                console.log(`✅ Image uploaded to Shopify: ${imageUrl}`);
-            } catch (err: any) {
-                console.error(`❌ Failed to upload ${file.originalname}:`, err.message);
-                errors.push(`${file.originalname}: ${err.message}`);
+            if (!files || files.length === 0) {
+                return res.status(400).json({ error: 'No image files provided' });
             }
-        }
 
-        if (uploadedUrls.length === 0) {
-            return res.status(500).json({ 
-                error: 'Failed to upload any images',
-                details: errors
+            // Find product
+            const product = await Product.findById(productId);
+            if (!product) {
+                return res.status(404).json({ error: 'Product not found' });
+            }
+
+            console.log(`📸 Uploading ${files.length} images for product: ${product.title}`);
+
+            const uploadedUrls: string[] = [];
+            const errors: string[] = [];
+
+            // Upload each file to Shopify Files
+            for (const file of files) {
+                try {
+                    const imageUrl = await uploadToShopifyFiles(
+                        file.buffer,
+                        file.originalname,
+                        file.mimetype
+                    );
+                    uploadedUrls.push(imageUrl);
+                    console.log(`✅ Image uploaded to Shopify: ${imageUrl}`);
+                } catch (err: any) {
+                    console.error(`❌ Failed to upload ${file.originalname}:`, err.message);
+                    errors.push(`${file.originalname}: ${err.message}`);
+                }
+            }
+
+            if (uploadedUrls.length === 0) {
+                return res.status(500).json({ 
+                    error: 'Failed to upload any images',
+                    details: errors
+                });
+            }
+
+            // Update product in database
+            // Append new images to the existing list
+            if (!product.images) {
+                product.images = [];
+            }
+
+            // Add new images
+            const newImages = uploadedUrls.map(url => ({ src: url }));
+            product.images.push(...newImages);
+
+            // Mark as staged (though we will sync immediately)
+            product.status = 'staged';
+            await product.save();
+
+            // REAL-TIME SYNC: Trigger sync to Shopify immediately
+            console.log(`🔄 trigger auto-sync for ${productId} after image upload...`);
+            // We await this to ensure the user sees the 'synced' state or errors if any
+            // Or we can fire-and-forget if speed is critical, but user asked for "visible in real time" implying confirmation
+            try {
+                await syncManager.syncSpecificProduct(productId);
+            } catch (syncErr) {
+                console.error(`⚠️ Auto-sync failed for ${productId}:`, syncErr);
+                // We don't fail the request, but we log it. status will remain 'staged' or 'error' from inside syncManager
+            }
+
+            res.json({
+                success: true,
+                imageUrls: uploadedUrls,
+                message: `Successfully uploaded ${uploadedUrls.length} images and synced to Shopify`,
+                errors: errors.length > 0 ? errors : undefined
+            });
+
+        } catch (error: any) {
+            console.error('Image upload error:', error);
+            res.status(500).json({
+                error: 'Failed to upload images',
+                details: error.message
             });
         }
+    });
 
-        // Update product in database
-        // Append new images to the existing list
-        if (!product.images) {
-            product.images = [];
+    /**
+     * DELETE /api/products/:productId/images
+     * Remove an image from a product
+     */
+    router.delete('/:productId/images', async (req, res) => {
+        try {
+            const { productId } = req.params;
+            const { imageUrl, imageId } = req.body;
+
+            if (!imageUrl && !imageId) {
+                return res.status(400).json({ error: 'Image URL or ID is required' });
+            }
+
+            const product = await Product.findById(productId);
+            if (!product) {
+                return res.status(404).json({ error: 'Product not found' });
+            }
+
+            if (!product.images || product.images.length === 0) {
+                return res.status(400).json({ error: 'Product has no images' });
+            }
+
+            // Filter out the image
+            const originalLength = product.images.length;
+            
+            if (imageId) {
+                product.images = product.images.filter(img => 
+                    (img as any)._id?.toString() !== imageId
+                );
+            } else {
+                product.images = product.images.filter(img => img.src !== imageUrl);
+            }
+
+            if (product.images.length === originalLength) {
+                return res.status(400).json({ error: 'Image not found in product' });
+            }
+
+            // Mark as staged
+            product.status = 'staged';
+            await product.save();
+
+            // REAL-TIME SYNC: Trigger sync to Shopify immediately
+            console.log(`🔄 trigger auto-sync for ${productId} after image delete...`);
+            try {
+                await syncManager.syncSpecificProduct(productId);
+            } catch (syncErr) {
+                console.error(`⚠️ Auto-sync failed for ${productId}:`, syncErr);
+            }
+
+            res.json({ success: true, message: 'Image removed and product synced', images: product.images });
+
+        } catch (error) {
+            console.error('Error deleting image:', error);
+            res.status(500).json({ error: 'Failed to delete image' });
         }
+    });
 
-        // Add new images
-        const newImages = uploadedUrls.map(url => ({ src: url }));
-        product.images.push(...newImages);
-
-        // Mark as staged so it gets synced
-        product.status = 'staged';
-        await product.save();
-
-        res.json({
-            success: true,
-            imageUrls: uploadedUrls,
-            message: `Successfully uploaded ${uploadedUrls.length} images`,
-            errors: errors.length > 0 ? errors : undefined
-        });
-
-    } catch (error: any) {
-        console.error('Image upload error:', error);
-        res.status(500).json({
-            error: 'Failed to upload images',
-            details: error.message
-        });
-    }
-});
-
-/**
- * DELETE /api/products/:productId/images
- * Remove an image from a product
- */
-router.delete('/:productId/images', async (req, res) => {
-    try {
-        const { productId } = req.params;
-        const { imageUrl, imageId } = req.body;
-
-        if (!imageUrl && !imageId) {
-            return res.status(400).json({ error: 'Image URL or ID is required' });
-        }
-
-        const product = await Product.findById(productId);
-        if (!product) {
-            return res.status(404).json({ error: 'Product not found' });
-        }
-
-        if (!product.images || product.images.length === 0) {
-            return res.status(400).json({ error: 'Product has no images' });
-        }
-
-        // Filter out the image
-        const originalLength = product.images.length;
-        
-        if (imageId) {
-            product.images = product.images.filter(img => 
-                (img as any)._id?.toString() !== imageId
-            );
-        } else {
-            product.images = product.images.filter(img => img.src !== imageUrl);
-        }
-
-        if (product.images.length === originalLength) {
-            return res.status(400).json({ error: 'Image not found in product' });
-        }
-
-        // Mark as staged
-        product.status = 'staged';
-        await product.save();
-
-        res.json({ success: true, message: 'Image removed', images: product.images });
-
-    } catch (error) {
-        console.error('Error deleting image:', error);
-        res.status(500).json({ error: 'Failed to delete image' });
-    }
-});
-
-export default router;
+    return router;
+};

@@ -14,7 +14,7 @@ import { SyncManager } from './services/SyncManager';
 import { GoogleSheetsAdapter } from './services/GoogleSheetsAdapter';
 import { GoogleDriveAdapter } from './services/GoogleDriveAdapter';
 import { Database } from './services/Database';
-import imageUploadRouter from './routes/imageUpload';
+import { createImageUploadRouter } from './routes/imageUpload';
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -49,15 +49,11 @@ app.use(cors({
 }));
 app.use(express.json());
 
-import variantsRouter from './routes/variants';
+import { createVariantsRouter } from './routes/variants';
 
 // ... other imports
 
-// Image Upload Routes
-app.use('/api/products', imageUploadRouter);
-
-// Variant Routes
-app.use('/api/products', variantsRouter);
+// Routes initialized after services
 
 // Initialize Services
 const aqClient = new AQClient(process.env.AQ_API_KEY || '');
@@ -67,6 +63,10 @@ const googleSheets = new GoogleSheetsAdapter();
 const googleDrive = new GoogleDriveAdapter();
 
 const syncManager = new SyncManager(aqClient, shopifyClient, pricingEngine, googleSheets, googleDrive);
+
+// Initialize Routes with Dependencies
+app.use('/api/products', createImageUploadRouter(syncManager));
+app.use('/api/products', createVariantsRouter(syncManager));
 
 // --- Shopify Auth Routes ---
 app.get(shopify.config.auth.path, shopify.auth.begin());
