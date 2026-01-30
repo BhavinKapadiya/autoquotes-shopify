@@ -39,9 +39,6 @@ function ImageUploadModal({
             const validFiles: File[] = [];
             const newPreviews: string[] = [];
             
-            // Reset previous selection
-            previews.forEach(url => URL.revokeObjectURL(url));
-
             // Validate and process files
             for (const file of files) {
                 const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -53,14 +50,25 @@ function ImageUploadModal({
                     setError(`File ${file.name} is too large (max 10MB)`);
                     continue;
                 }
+                
+                // Avoid duplicates based on name and size
+                if (selectedFiles.some(f => f.name === file.name && f.size === file.size)) {
+                    continue;
+                }
+
                 validFiles.push(file);
                 newPreviews.push(URL.createObjectURL(file));
             }
 
             if (validFiles.length > 0) {
-                setSelectedFiles(validFiles);
-                setPreviews(newPreviews);
+                setSelectedFiles(prev => [...prev, ...validFiles]);
+                setPreviews(prev => [...prev, ...newPreviews]);
                 setError(null);
+            }
+            
+            // Reset input so the same file can be selected again if needed (though we filter duplicates above)
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
             }
         }
     };
@@ -167,17 +175,48 @@ function ImageUploadModal({
                             <div className="mb-4">
                                 <div className="grid grid-cols-3 gap-3 mb-3">
                                     {previews.map((preview, idx) => (
-                                        <div key={idx} className="relative aspect-square">
+                                        <div key={idx} className="relative aspect-square group">
                                             <img src={preview} alt={`Preview ${idx}`} className="w-full h-full object-cover rounded-lg border border-indigo-200 bg-gray-50" />
+                                            {/* Remove Button for individual image */}
+                                            <button
+                                                onClick={() => {
+                                                    const newPreviews = [...previews];
+                                                    const newFiles = [...selectedFiles];
+                                                    URL.revokeObjectURL(newPreviews[idx]);
+                                                    newPreviews.splice(idx, 1);
+                                                    newFiles.splice(idx, 1);
+                                                    setPreviews(newPreviews);
+                                                    setSelectedFiles(newFiles);
+                                                }}
+                                                className="absolute top-1 right-1 p-1 bg-white/90 backdrop-blur rounded-full shadow hover:bg-red-50 text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
                                         </div>
                                     ))}
+                                    
+                                    {/* Add More Button (Camera) */}
+                                    <div 
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="aspect-square rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all group"
+                                    >
+                                        <div className="p-2 bg-gray-100 rounded-full group-hover:bg-white transition-colors">
+                                            <svg className="w-6 h-6 text-gray-400 group-hover:text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            </svg>
+                                        </div>
+                                        <span className="text-xs font-medium text-gray-500 group-hover:text-indigo-600 mt-1">Add</span>
+                                    </div>
                                 </div>
                                 <div className="flex justify-end">
                                     <button
                                         onClick={() => { setPreviews([]); setSelectedFiles([]); }}
                                         className="text-xs text-red-600 hover:text-red-700 font-medium"
                                     >
-                                        Clear Selection
+                                        Clear All
                                     </button>
                                 </div>
                             </div>
