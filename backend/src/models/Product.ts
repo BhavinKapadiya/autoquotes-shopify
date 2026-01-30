@@ -18,7 +18,7 @@ export interface IProduct extends Document {
     finalPrice: number; // Calculated price
 
     // Status
-    status: 'staged' | 'synced' | 'error';
+    status: 'staged' | 'synced' | 'error' | 'archived';
     syncError?: string;
     lastIngested: Date;
     lastSynced?: Date;
@@ -51,7 +51,7 @@ const ProductSchema: Schema = new Schema({
     costMarkup: { type: Number, default: 0 },
     finalPrice: { type: Number, default: 0 },
 
-    status: { type: String, default: 'staged', enum: ['staged', 'synced', 'error'] },
+    status: { type: String, default: 'staged', enum: ['staged', 'synced', 'error', 'archived'] },
     syncError: { type: String },
     lastIngested: { type: Date, default: Date.now },
     lastSynced: { type: Date },
