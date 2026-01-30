@@ -277,6 +277,238 @@ function ImageUploadModal({
     );
 }
 
+function ManageVariantsModal({
+    isOpen,
+    product,
+    onClose,
+    onSuccess
+}: {
+    isOpen: boolean;
+    product: any;
+    onClose: () => void;
+    onSuccess: () => void;
+}) {
+    const [variants, setVariants] = useState<any[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // Form State
+    const [newVariant, setNewVariant] = useState({
+        sku: '',
+        price: '',
+        inventory: '',
+        option1: 'Size',
+        value1: '',
+        option2: '',
+        value2: '',
+        option3: '',
+        value3: ''
+    });
+
+    useEffect(() => {
+        if (isOpen && product) {
+            fetchVariants();
+            // Pre-fill SKU based on product
+            setNewVariant(prev =>({ ...prev, sku: product.aqModelNumber, price: product.finalPrice?.toString() || '' }));
+        }
+    }, [isOpen, product]);
+
+    const fetchVariants = async () => {
+        setLoading(true);
+        try {
+            const res = await axios.get(`${API_URL}/api/products/${product._id}/variants`);
+            setVariants(res.data.variants || []);
+        } catch (err) {
+            console.error(err);
+            setError('Failed to load variants');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAddVariant = () => {
+        if (!newVariant.value1 || !newVariant.price) {
+            alert('Please enter at least Option Value and Price');
+            return;
+        }
+
+        const variant = {
+            id: crypto.randomUUID(),
+            ...newVariant,
+            title: `${newVariant.value1} ${newVariant.value2 || ''} ${newVariant.value3 || ''}`.trim()
+        };
+
+        setVariants([...variants, variant]);
+        
+        // Reset value fields but keep option names for consistency
+        setNewVariant(prev => ({
+            ...prev,
+            value1: '',
+            value2: '',
+            value3: ''
+        }));
+    };
+
+    const handleDeleteVariant = (index: number) => {
+        const updated = [...variants];
+        updated.splice(index, 1);
+        setVariants(updated);
+    };
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            await axios.post(`${API_URL}/api/products/${product._id}/variants`, {
+                variants: variants
+            });
+            onSuccess();
+            onClose();
+        } catch (err) {
+            console.error(err);
+            setError('Failed to save variants');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (!isOpen || !product) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto flex flex-col">
+                
+                {/* Header */}
+                <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-900">Manage Variants</h2>
+                        <p className="text-sm text-gray-500 mt-0.5">{product.title}</p>
+                    </div>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 transition-colors">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 p-6 overflow-y-auto">
+                    
+                    {/* Add Variant Form */}
+                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6">
+                        <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">Add New Variant</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1">Option Name</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Size, Color, etc." 
+                                    className="w-full text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                    value={newVariant.option1}
+                                    onChange={e => setNewVariant({...newVariant, option1: e.target.value})}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1">Option Value <span className="text-red-500">*</span></label>
+                                <input 
+                                    type="text" 
+                                    placeholder="Small, Red, etc." 
+                                    className="w-full text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                    value={newVariant.value1}
+                                    onChange={e => setNewVariant({...newVariant, value1: e.target.value})}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1">Price <span className="text-red-500">*</span></label>
+                                <div className="relative">
+                                    <span className="absolute left-3 top-2 text-gray-500">$</span>
+                                    <input 
+                                        type="number" 
+                                        className="w-full pl-6 text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                        value={newVariant.price}
+                                        onChange={e => setNewVariant({...newVariant, price: e.target.value})}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1">SKU</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+                                    value={newVariant.sku}
+                                    onChange={e => setNewVariant({...newVariant, sku: e.target.value})}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex justify-end">
+                            <button 
+                                onClick={handleAddVariant}
+                                className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 text-sm shadow-sm"
+                            >
+                                + Add to List
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Variants Table */}
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-gray-50 text-gray-500 font-semibold border-b border-gray-200">
+                                <tr>
+                                    <th className="px-4 py-3">Variant Option</th>
+                                    <th className="px-4 py-3">SKU</th>
+                                    <th className="px-4 py-3">Price</th>
+                                    <th className="px-4 py-3 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {loading ? (
+                                    <tr><td colSpan={4} className="p-4 text-center text-gray-500">Loading elements...</td></tr>
+                                ) : variants.length === 0 ? (
+                                    <tr><td colSpan={4} className="p-8 text-center text-gray-400 italic">No variants active. Product uses default single variant.</td></tr>
+                                ) : (
+                                    variants.map((v, i) => (
+                                        <tr key={i} className="hover:bg-gray-50">
+                                            <td className="px-4 py-3 font-medium text-gray-900">
+                                                {v.option1}: {v.value1} 
+                                                {v.value2 && <span className="text-gray-400 mx-1">|</span>} 
+                                                {v.value2}
+                                            </td>
+                                            <td className="px-4 py-3 text-gray-500 font-mono text-xs">{v.sku}</td>
+                                            <td className="px-4 py-3 text-gray-900 font-medium">${Number(v.price).toFixed(2)}</td>
+                                            <td className="px-4 py-3 text-right">
+                                                <button 
+                                                    onClick={() => handleDeleteVariant(i)}
+                                                    className="text-red-500 hover:text-red-700 font-medium text-xs"
+                                                >
+                                                    Remove
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50 rounded-b-2xl">
+                    <button onClick={onClose} className="px-4 py-2 text-gray-700 font-medium hover:bg-gray-200 rounded-lg transition-colors">Cancel</button>
+                    <button 
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                        {saving && <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                        Save Variants
+                    </button>
+                </div>
+
+             </div>
+        </div>
+    );
+}
+
 export default function StagingPage() {
     const [products, setProducts] = useState([]);
     const [page, setPage] = useState(1);
@@ -328,10 +560,34 @@ export default function StagingPage() {
         }
     };
 
+    // Variant modal state
+    const [variantsModalOpen, setVariantsModalOpen] = useState(false);
+    
+    // Dropdown state
+    const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+
     const handleChangeImage = (product: any) => {
+        setOpenDropdownId(null);
         setSelectedProduct(product);
         setImageModalOpen(true);
     };
+
+    const handleManageVariants = (product: any) => {
+        setOpenDropdownId(null);
+        setSelectedProduct(product);
+        setVariantsModalOpen(true);
+    };
+
+    // Close dropdowns when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (openDropdownId && !(event.target as Element).closest('.action-dropdown')) {
+                setOpenDropdownId(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [openDropdownId]);
 
     const handleImageUploadSuccess = () => {
         setActionStatus('Image uploaded successfully!');
@@ -519,16 +775,41 @@ export default function StagingPage() {
                                                 {p.status}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={() => handleChangeImage(p)}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                                        <td className="px-6 py-4 text-right relative">
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setOpenDropdownId(openDropdownId === p._id ? null : p._id);
+                                                }}
+                                                className="action-dropdown inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
                                             >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                Actions
+                                                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                                 </svg>
-                                                Change Image
                                             </button>
+
+                                            {/* Dropdown Menu */}
+                                            {openDropdownId === p._id && (
+                                                <div className="action-dropdown absolute right-6 top-12 w-48 bg-white rounded-xl shadow-xl border border-gray-100 z-20 overflow-hidden animate-scale-in origin-top-right">
+                                                    <div className="py-1">
+                                                        <button
+                                                            onClick={() => handleChangeImage(p)}
+                                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-indigo-600 flex items-center gap-2"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                                            Change Images
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleManageVariants(p)}
+                                                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 hover:text-indigo-600 flex items-center gap-2"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>
+                                                            Manage Variants
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </td>
                                     </tr>
                                 ))
@@ -574,6 +855,16 @@ export default function StagingPage() {
                     setSelectedProduct(null);
                 }}
                 onSuccess={handleImageUploadSuccess}
+            />
+
+            <ManageVariantsModal
+                isOpen={variantsModalOpen}
+                product={selectedProduct}
+                onClose={() => {
+                    setVariantsModalOpen(false);
+                    setSelectedProduct(null);
+                }}
+                onSuccess={() => fetchProducts(page)}
             />
         </div>
     );

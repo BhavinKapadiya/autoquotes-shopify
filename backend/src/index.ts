@@ -49,8 +49,15 @@ app.use(cors({
 }));
 app.use(express.json());
 
+import variantsRouter from './routes/variants';
+
+// ... other imports
+
 // Image Upload Routes
 app.use('/api/products', imageUploadRouter);
+
+// Variant Routes
+app.use('/api/products', variantsRouter);
 
 // Initialize Services
 const aqClient = new AQClient(process.env.AQ_API_KEY || '');

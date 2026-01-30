@@ -258,31 +258,64 @@ export class SyncManager {
                     // Fallback text if no table
                 }
 
-                // Check for Custom Variants (Google Sheets)
-                // We re-fetch here to get latest sheet data
-                const customVariants = await this.googleSheets.getVariants(product.aqModelNumber);
-
+                // Check for Native DB Variants First
                 let shopifyVariants = [];
-                if (customVariants.length > 0) {
-                    shopifyVariants = customVariants.map(v => {
-                        const variantPrice = product.finalPrice + (v.priceMod || 0);
-                        return {
-                            price: variantPrice,
-                            sku: `${product.aqModelNumber}${v.skuMod}`,
-                            option1: v.optionValue,
-                            inventory_management: null
-                        };
-                    });
-                } else {
-                    shopifyVariants.push({
-                        price: product.finalPrice,
-                        sku: product.aqModelNumber,
-                        option1: 'Default Title',
-                        inventory_management: null
-                    });
-                }
+                let options = undefined;
 
-                const options = customVariants.length > 0 ? [{ name: customVariants[0].optionName }] : undefined;
+                if (product.variants && product.variants.length > 0) {
+                    console.log(`Using ${product.variants.length} Native DB Variants`);
+                    
+                    // Group options
+                    const optionsMap = new Map();
+                    product.variants.forEach((v: any) => {
+                         if (v.option1) optionsMap.set('option1', v.option1);
+                         if (v.option2) optionsMap.set('option2', v.option2);
+                         if (v.option3) optionsMap.set('option3', v.option3);
+                    });
+                    
+                    if (optionsMap.size > 0) {
+                        options = [];
+                        if (optionsMap.has('option1')) options.push({ name: product.variants[0].option1 });
+                        if (optionsMap.has('option2')) options.push({ name: product.variants[0].option2 });
+                        if (optionsMap.has('option3')) options.push({ name: product.variants[0].option3 });
+                    }
+
+                    shopifyVariants = product.variants.map((v: any) => ({
+                        price: v.price,
+                        sku: v.sku,
+                        option1: v.value1,
+                        option2: v.value2,
+                        option3: v.value3,
+                        inventory_management: v.inventory > 0 ? 'shopify' : null,
+                        inventory_quantity: v.inventory > 0 ? v.inventory : undefined
+                    }));
+
+                } else {
+                    // Fallback to Google Sheets (Legacy)
+                    const customVariants = await this.googleSheets.getVariants(product.aqModelNumber);
+                    
+                    if (customVariants.length > 0) {
+                         // ... existing google sheets logic ...
+                         shopifyVariants = customVariants.map(v => {
+                            const variantPrice = product.finalPrice + (v.priceMod || 0);
+                            return {
+                                price: variantPrice,
+                                sku: `${product.aqModelNumber}${v.skuMod}`,
+                                option1: v.optionValue,
+                                inventory_management: null
+                            };
+                        });
+                        options = [{ name: customVariants[0].optionName }];
+                    } else {
+                         // Default Single Variant
+                         shopifyVariants.push({
+                            price: product.finalPrice,
+                            sku: product.aqModelNumber,
+                            option1: 'Default Title',
+                            inventory_management: null
+                        });
+                    }
+                }
 
                 // Determine Shopify status
                 // If local status is 'archived', we set to 'draft'.

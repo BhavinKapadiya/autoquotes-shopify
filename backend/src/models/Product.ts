@@ -58,7 +58,19 @@ const ProductSchema: Schema = new Schema({
 
     images: [{ src: String, attachment: String }],
     categoryValues: [{ property: String, value: String }],
-    variants: [Schema.Types.Mixed],
+    variants: [{
+        id: String,
+        title: String,
+        price: Number,
+        sku: String,
+        inventory: Number,
+        option1: String, 
+        value1: String,
+        option2: String,
+        value2: String,
+        option3: String,
+        value3: String
+    }],
     tags: [String],
     productType: { type: String },
 
