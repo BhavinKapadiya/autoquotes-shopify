@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
-const port = 3000;
+const port = 3456;
 
 // Instructions:
 // 1. Set SHOPIFY_API_KEY (Client ID) and SHOPIFY_API_SECRET (Client Secret) in your .env or pass them as args.

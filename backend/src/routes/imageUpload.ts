@@ -23,11 +23,21 @@ const upload = multer({
 const SHOPIFY_SHOP = process.env.SHOPIFY_SHOP_NAME;
 const SHOPIFY_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
 
+// Build the shop domain - handle both "store-name" and "store-name.myshopify.com" formats
+function getShopDomain(): string {
+    const shop = SHOPIFY_SHOP || '';
+    // If already has .myshopify.com, use as-is; otherwise append it
+    return shop.includes('.myshopify.com') ? shop : `${shop}.myshopify.com`;
+}
+
 /**
  * Upload image to Shopify Files via GraphQL API
  */
 async function uploadToShopifyFiles(fileBuffer: Buffer, filename: string, mimeType: string): Promise<string> {
-    const graphqlEndpoint = `https://${SHOPIFY_SHOP}.myshopify.com/admin/api/2024-10/graphql.json`;
+    const shopDomain = getShopDomain();
+    const graphqlEndpoint = `https://${shopDomain}/admin/api/2024-10/graphql.json`;
+    
+    console.log(`📡 Shopify GraphQL endpoint: ${graphqlEndpoint}`);
     
     // Step 1: Create staged upload target
     const stagedUploadMutation = `
