@@ -80,6 +80,21 @@ async function uploadToShopifyFiles(fileBuffer: Buffer, filename: string, mimeTy
         }
     );
 
+    // Log the full response for debugging
+    console.log('📋 Shopify stagedUploads response:', JSON.stringify(stagedResponse.data, null, 2));
+
+    // Check for GraphQL errors (authentication, permission issues)
+    if (stagedResponse.data.errors) {
+        console.error('❌ Shopify GraphQL errors:', stagedResponse.data.errors);
+        throw new Error(`Shopify API error: ${stagedResponse.data.errors[0]?.message || 'Unknown error'}`);
+    }
+
+    // Check if stagedUploadsCreate is null (usually means auth failed)
+    if (!stagedResponse.data.data?.stagedUploadsCreate) {
+        console.error('❌ stagedUploadsCreate is null. Full response:', stagedResponse.data);
+        throw new Error('Shopify API returned null. Check access token and permissions.');
+    }
+
     const stagedData = stagedResponse.data.data.stagedUploadsCreate;
     
     if (stagedData.userErrors?.length > 0) {
