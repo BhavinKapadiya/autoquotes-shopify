@@ -141,12 +141,28 @@ app.get('/api/pricing/rules', (req, res) => {
 
 // --- Manufacturer Settings ---
 
+// Diagnostic endpoint to check API configuration
+app.get('/api/debug/config', (req, res) => {
+    res.json({
+        aq_api_url: process.env.AQ_API_URL || 'https://api.aq-fes.com/products-api (default)',
+        aq_api_key_set: !!process.env.AQ_API_KEY,
+        aq_api_key_preview: process.env.AQ_API_KEY ? process.env.AQ_API_KEY.slice(0, 8) + '...' : 'NOT SET',
+        shopify_shop: process.env.SHOPIFY_SHOP_NAME || 'NOT SET',
+        node_env: process.env.NODE_ENV || 'development'
+    });
+});
+
 app.get('/api/manufacturers', async (req, res) => {
     try {
         const mfrs = await aqClient.getManufacturers();
         res.json(mfrs);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch manufacturers' });
+    } catch (error: any) {
+        console.error('Manufacturers endpoint error:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch manufacturers',
+            details: error.message,
+            aq_url: process.env.AQ_API_URL || 'https://api.aq-fes.com/products-api'
+        });
     }
 });
 

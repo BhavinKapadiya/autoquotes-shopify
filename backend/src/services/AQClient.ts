@@ -64,16 +64,22 @@ export class AQClient {
      */
     async getManufacturers(): Promise<{ id: string, name: string }[]> {
         try {
+            console.log(`🔍 Fetching manufacturers from: ${this.baseUrl}/manufacturers`);
+            console.log(`🔑 Using API Key: ${this.apiKey ? this.apiKey.slice(0, 8) + '...' : 'NOT SET'}`);
+            
             const response = await this.client.get<any>('/manufacturers');
             // Support both direct array and nested data property
             const raw = Array.isArray(response.data) ? response.data : (response.data?.data || []);
 
-            console.log('Raw Manufacturers Data:', JSON.stringify(raw.slice(0, 3))); // Log first few for debugging
+            console.log(`✅ Received ${raw.length} manufacturers from AQ API`);
+            console.log('Raw Manufacturers Data (first 3):', JSON.stringify(raw.slice(0, 3)));
 
             const mapped = raw.map((m: any) => ({
                 id: m.id || m.mfrId || m.ManufacturerID || m.manufacturerId || '',
                 name: m.name || m.mfrName || m.ManufacturerName || m.manufacturerName || 'Unknown'
             })).filter((m: { id: string; name: string }) => m.id && m.name !== 'Unknown');
+
+            console.log(`📦 Mapped ${mapped.length} valid manufacturers`);
 
             // Ensure AARCO is always present (User Requirement)
             const aarcoId = '78512195-9f0a-de11-b012-001ec95274b6';
@@ -84,8 +90,15 @@ export class AQClient {
             }
 
             return mapped;
-        } catch (error) {
-            console.error('Error fetching manufacturers from AQ:', error);
+        } catch (error: any) {
+            console.error('❌ Error fetching manufacturers from AQ:');
+            console.error('   URL:', `${this.baseUrl}/manufacturers`);
+            console.error('   API Key:', this.apiKey ? this.apiKey.slice(0, 8) + '...' : 'NOT SET');
+            console.error('   Error:', error.message);
+            if (error.response) {
+                console.error('   Status:', error.response.status);
+                console.error('   Data:', JSON.stringify(error.response.data));
+            }
             // Fallback: Always return AARCO at minimum
             return [
                 { id: '78512195-9f0a-de11-b012-001ec95274b6', name: 'AARCO Products' }
