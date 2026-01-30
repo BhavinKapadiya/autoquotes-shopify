@@ -71,9 +71,9 @@ export const createVariantsRouter = (syncManager: SyncManager) => {
             await product.save();
 
             // REAL-TIME SYNC: Trigger sync to Shopify immediately
-            console.log(`🔄 trigger auto-sync for ${productId} after variants update...`);
+            console.log(`🔄 trigger auto-sync for ${product.aqProductId} after variants update...`);
             try {
-                await syncManager.syncSpecificProduct(productId);
+                await syncManager.syncToShopify(product.aqProductId);
             } catch (syncErr) {
                 console.error(`⚠️ Auto-sync failed for ${productId}:`, syncErr);
             }

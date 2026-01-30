@@ -255,14 +255,12 @@ export const createImageUploadRouter = (syncManager: SyncManager) => {
             await product.save();
 
             // REAL-TIME SYNC: Trigger sync to Shopify immediately
-            console.log(`🔄 trigger auto-sync for ${productId} after image upload...`);
-            // We await this to ensure the user sees the 'synced' state or errors if any
-            // Or we can fire-and-forget if speed is critical, but user asked for "visible in real time" implying confirmation
+            console.log(`🔄 trigger auto-sync for ${product.aqProductId} after image upload...`);
             try {
-                await syncManager.syncSpecificProduct(productId);
+                // Use syncToShopify directly to push LOCAL state (with new images)
+                await syncManager.syncToShopify(product.aqProductId);
             } catch (syncErr) {
                 console.error(`⚠️ Auto-sync failed for ${productId}:`, syncErr);
-                // We don't fail the request, but we log it. status will remain 'staged' or 'error' from inside syncManager
             }
 
             res.json({
@@ -323,9 +321,9 @@ export const createImageUploadRouter = (syncManager: SyncManager) => {
             await product.save();
 
             // REAL-TIME SYNC: Trigger sync to Shopify immediately
-            console.log(`🔄 trigger auto-sync for ${productId} after image delete...`);
+            console.log(`🔄 trigger auto-sync for ${product.aqProductId} after image delete...`);
             try {
-                await syncManager.syncSpecificProduct(productId);
+                await syncManager.syncToShopify(product.aqProductId);
             } catch (syncErr) {
                 console.error(`⚠️ Auto-sync failed for ${productId}:`, syncErr);
             }
