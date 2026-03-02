@@ -33,6 +33,9 @@ export interface IProduct extends Document {
     // Shopify Info
     shopifyId?: string;
     shopifyHandle?: string;
+
+    // Track one-time thunder image sync
+    thunderImagesSynced?: boolean;
 }
 
 const ProductSchema: Schema = new Schema({
@@ -75,7 +78,9 @@ const ProductSchema: Schema = new Schema({
     productType: { type: String },
 
     shopifyId: { type: String },
-    shopifyHandle: { type: String }
+    shopifyHandle: { type: String },
+
+    thunderImagesSynced: { type: Boolean, default: false }
 }, {
     timestamps: true
 });

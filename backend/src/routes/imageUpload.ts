@@ -1,10 +1,8 @@
 import { Router } from 'express';
 import multer from 'multer';
-import axios from 'axios';
-import FormData from 'form-data';
 import Product from '../models/Product';
-
-const router = Router();
+import { ShopifyClient } from '../services/ShopifyClient';
+import { SyncManager } from '../services/SyncManager';
 
 // Configure multer for memory storage (we'll stream to Shopify)
 const upload = multer({
@@ -20,182 +18,14 @@ const upload = multer({
     }
 });
 
-const SHOPIFY_SHOP = process.env.SHOPIFY_SHOP_NAME;
-const SHOPIFY_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
-
-// Build the shop domain - handle both "store-name" and "store-name.myshopify.com" formats
-function getShopDomain(): string {
-    const shop = SHOPIFY_SHOP || '';
-    // If already has .myshopify.com, use as-is; otherwise append it
-    return shop.includes('.myshopify.com') ? shop : `${shop}.myshopify.com`;
-}
-
-/**
- * Upload image to Shopify Files via GraphQL API
- */
-async function uploadToShopifyFiles(fileBuffer: Buffer, filename: string, mimeType: string): Promise<string> {
-    const shopDomain = getShopDomain();
-    const graphqlEndpoint = `https://${shopDomain}/admin/api/2024-10/graphql.json`;
-    
-    console.log(`📡 Shopify GraphQL endpoint: ${graphqlEndpoint}`);
-    
-    // Step 1: Create staged upload target
-    const stagedUploadMutation = `
-        mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
-            stagedUploadsCreate(input: $input) {
-                stagedTargets {
-                    url
-                    resourceUrl
-                    parameters {
-                        name
-                        value
-                    }
-                }
-                userErrors {
-                    field
-                    message
-                }
-            }
-        }
-    `;
-
-    const stagedResponse = await axios.post(
-        graphqlEndpoint,
-        {
-            query: stagedUploadMutation,
-            variables: {
-                input: [{
-                    filename: filename,
-                    mimeType: mimeType,
-                    resource: "FILE",
-                    httpMethod: "POST"
-                }]
-            }
-        },
-        {
-            headers: {
-                'X-Shopify-Access-Token': SHOPIFY_TOKEN,
-                'Content-Type': 'application/json'
-            }
-        }
-    );
-
-    // Log the full response for debugging
-    console.log('📋 Shopify stagedUploads response:', JSON.stringify(stagedResponse.data, null, 2));
-
-    // Check for GraphQL errors (authentication, permission issues)
-    if (stagedResponse.data.errors) {
-        console.error('❌ Shopify GraphQL errors:', stagedResponse.data.errors);
-        throw new Error(`Shopify API error: ${stagedResponse.data.errors[0]?.message || 'Unknown error'}`);
-    }
-
-    // Check if stagedUploadsCreate is null (usually means auth failed)
-    if (!stagedResponse.data.data?.stagedUploadsCreate) {
-        console.error('❌ stagedUploadsCreate is null. Full response:', stagedResponse.data);
-        throw new Error('Shopify API returned null. Check access token and permissions.');
-    }
-
-    const stagedData = stagedResponse.data.data.stagedUploadsCreate;
-    
-    if (stagedData.userErrors?.length > 0) {
-        throw new Error(`Staged upload error: ${stagedData.userErrors[0].message}`);
-    }
-
-    const target = stagedData.stagedTargets[0];
-    const uploadUrl = target.url;
-    const resourceUrl = target.resourceUrl;
-    const parameters = target.parameters;
-
-    // Step 2: Upload file to staged URL
-    const formData = new FormData();
-    
-    // Add all parameters from Shopify
-    for (const param of parameters) {
-        formData.append(param.name, param.value);
-    }
-    
-    // Add the file last
-    formData.append('file', fileBuffer, {
-        filename: filename,
-        contentType: mimeType
-    });
-
-    await axios.post(uploadUrl, formData, {
-        headers: formData.getHeaders(),
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity
-    });
-
-    // Step 3: Create the file in Shopify
-    const fileCreateMutation = `
-        mutation fileCreate($files: [FileCreateInput!]!) {
-            fileCreate(files: $files) {
-                files {
-                    ... on MediaImage {
-                        id
-                        image {
-                            url
-                        }
-                    }
-                    ... on GenericFile {
-                        id
-                        url
-                    }
-                }
-                userErrors {
-                    field
-                    message
-                }
-            }
-        }
-    `;
-
-    const fileCreateResponse = await axios.post(
-        graphqlEndpoint,
-        {
-            query: fileCreateMutation,
-            variables: {
-                files: [{
-                    originalSource: resourceUrl,
-                    contentType: "IMAGE"
-                }]
-            }
-        },
-        {
-            headers: {
-                'X-Shopify-Access-Token': SHOPIFY_TOKEN,
-                'Content-Type': 'application/json'
-            }
-        }
-    );
-
-    const fileData = fileCreateResponse.data.data.fileCreate;
-    
-    if (fileData.userErrors?.length > 0) {
-        throw new Error(`File create error: ${fileData.userErrors[0].message}`);
-    }
-
-    // The file creation is async in Shopify, so we use resourceUrl directly
-    // For immediate use, we'll use the resourceUrl which works as a valid image source
-    return resourceUrl;
-}
-
-/**
- * POST /api/products/:productId/image
- * Upload a new image for a product
- */
-/**
- * POST /api/products/:productId/image
- * Upload new images for a product (Support Multiple)
- */
-import { SyncManager } from '../services/SyncManager';
+const shopifyClient = new ShopifyClient();
 
 export const createImageUploadRouter = (syncManager: SyncManager) => {
     const router = Router();
 
     /**
      * POST /api/products/:productId/image
-     * Upload new images for a product (Support Multiple)
+     * Upload new images for a product (supports multiple)
      */
     router.post('/:productId/image', upload.array('images', 10), async (req, res) => {
         try {
@@ -220,7 +50,7 @@ export const createImageUploadRouter = (syncManager: SyncManager) => {
             // Upload each file to Shopify Files
             for (const file of files) {
                 try {
-                    const imageUrl = await uploadToShopifyFiles(
+                    const imageUrl = await shopifyClient.uploadToShopifyFiles(
                         file.buffer,
                         file.originalname,
                         file.mimetype
@@ -234,45 +64,39 @@ export const createImageUploadRouter = (syncManager: SyncManager) => {
             }
 
             if (uploadedUrls.length === 0) {
-                return res.status(500).json({ 
+                return res.status(500).json({
                     error: 'Failed to upload any images',
                     details: errors
                 });
             }
 
-            // Update product in database
             // Append new images to the existing list
             if (!product.images) {
                 product.images = [];
             }
-
-            // Add new images
-            const newImages = uploadedUrls.map(url => ({ src: url }));
-            product.images.push(...newImages);
-
-            // Mark as staged (though we will sync immediately)
+            product.images.push(...uploadedUrls.map(url => ({ src: url })));
             product.status = 'staged';
             await product.save();
 
             // REAL-TIME SYNC: Trigger sync to Shopify immediately
-            console.log(`🔄 trigger auto-sync for ${product.aqProductId} after image upload...`);
+            console.log(`🔄 Triggering auto-sync for ${product.aqProductId} after image upload...`);
             try {
-                // Use syncToShopify directly to push LOCAL state (with new images)
                 await syncManager.syncToShopify(product.aqProductId);
-            } catch (syncErr) {
-                console.error(`⚠️ Auto-sync failed for ${productId}:`, syncErr);
+            } catch (syncErr: any) {
+                // Don't fail the request, just log. The images are already saved in DB.
+                console.error(`⚠️ Auto-sync failed for ${productId} after upload:`, syncErr?.message || syncErr);
             }
 
-            res.json({
+            return res.json({
                 success: true,
                 imageUrls: uploadedUrls,
-                message: `Successfully uploaded ${uploadedUrls.length} images and synced to Shopify`,
+                message: `Successfully uploaded ${uploadedUrls.length} image(s) and synced to Shopify`,
                 errors: errors.length > 0 ? errors : undefined
             });
 
         } catch (error: any) {
             console.error('Image upload error:', error);
-            res.status(500).json({
+            return res.status(500).json({
                 error: 'Failed to upload images',
                 details: error.message
             });
@@ -303,9 +127,9 @@ export const createImageUploadRouter = (syncManager: SyncManager) => {
 
             // Filter out the image
             const originalLength = product.images.length;
-            
+
             if (imageId) {
-                product.images = product.images.filter(img => 
+                product.images = product.images.filter(img =>
                     (img as any)._id?.toString() !== imageId
                 );
             } else {
@@ -316,23 +140,22 @@ export const createImageUploadRouter = (syncManager: SyncManager) => {
                 return res.status(400).json({ error: 'Image not found in product' });
             }
 
-            // Mark as staged
             product.status = 'staged';
             await product.save();
 
             // REAL-TIME SYNC: Trigger sync to Shopify immediately
-            console.log(`🔄 trigger auto-sync for ${product.aqProductId} after image delete...`);
+            console.log(`🔄 Triggering auto-sync for ${product.aqProductId} after image delete...`);
             try {
                 await syncManager.syncToShopify(product.aqProductId);
-            } catch (syncErr) {
-                console.error(`⚠️ Auto-sync failed for ${productId}:`, syncErr);
+            } catch (syncErr: any) {
+                console.error(`⚠️ Auto-sync failed for ${productId} after delete:`, syncErr?.message || syncErr);
             }
 
-            res.json({ success: true, message: 'Image removed and product synced', images: product.images });
+            return res.json({ success: true, message: 'Image removed and product synced', images: product.images });
 
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error deleting image:', error);
-            res.status(500).json({ error: 'Failed to delete image' });
+            return res.status(500).json({ error: 'Failed to delete image', details: error.message });
         }
     });
 

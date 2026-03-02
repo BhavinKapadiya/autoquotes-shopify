@@ -157,6 +157,14 @@ export class SyncManager {
         // Convert to IProduct format
         // Upsert into MongoDB
         const Product = require('../models/Product').default; // Dynamic require to avoid circular dependency issues if any
+        
+        // Let's get the existing product to check if thunder is already synced
+        let existingProduct = null;
+        try {
+            existingProduct = await Product.findOne({ aqProductId: aqProduct.productId });
+        } catch (e) {
+            console.error('Error finding existing product', e);
+        }
 
         try {
             if (!aqProduct.models?.mfrModel) return;
@@ -193,9 +201,75 @@ export class SyncManager {
 
             // Extract Images
             let images: { src: string, attachment?: string }[] = aqProduct.pictures ? aqProduct.pictures.map(pic => ({ src: pic.url })) : [];
-            const overrideImage = await this.googleDrive.findImageOverride(modelNumber);
-            if (overrideImage) {
-                images = [{ src: '', attachment: overrideImage.base64 }];
+            let thunderImagesSynced = existingProduct?.thunderImagesSynced || false;
+
+            // --- THUNDER SPECIFIC LOGIC ---
+            const THUNDER_MFR_ID = 'ddffdfa6-be0d-dd11-a23a-00304834a8c9';
+            if (aqProduct.mfrId === THUNDER_MFR_ID) {
+                const thunderFolderId = process.env.THUNDER_DRIVE_FOLDER_ID;
+                const thunderKeyFile = process.env.THUNDER_GOOGLE_CREDENTIALS;
+
+                if (!thunderImagesSynced && thunderFolderId && thunderKeyFile) {
+                    console.log(`🌩️  Thunder Product detected (${modelNumber}). Checking Thunder Drive for multi-images...`);
+                    try {
+                        const thunderDrive = new GoogleDriveAdapter({
+                            folderId: thunderFolderId,
+                            keyFile: thunderKeyFile
+                        });
+
+                        const matches = await thunderDrive.findMultiImageOverrides(modelNumber);
+                        
+                        if (matches && matches.length > 0) {
+                            console.log(`✅ Found ${matches.length} matching Thunder images for ${modelNumber}. Uploading to Shopify...`);
+                            
+                            const thunderImages: { src: string }[] = [];
+
+                            for (const match of matches) {
+                                try {
+                                    const buffer = Buffer.from(match.base64, 'base64');
+                                    const shopifyUrl = await this.shopifyClient.uploadToShopifyFiles(
+                                        buffer,
+                                        match.name,
+                                        match.mimeType
+                                    );
+                                    thunderImages.push({ src: shopifyUrl });
+                                    console.log(`   -> Uploaded to Shopify Files: ${shopifyUrl}`);
+                                } catch (uploadErr: any) {
+                                    console.error(`   ❌ Failed to upload Thunder image ${match.name}:`, uploadErr?.message || uploadErr);
+                                }
+                            }
+                            
+                            // Only replace images if we successfully uploaded at least one
+                            if (thunderImages.length > 0) {
+                                images = thunderImages;
+                                thunderImagesSynced = true;
+                                console.log(`🏁 Thunder sync complete for ${modelNumber}. ${thunderImages.length} images uploaded.`);
+                            } else {
+                                // All uploads failed — keep default AQ images
+                                console.warn(`⚠️ All Thunder image uploads failed for ${modelNumber}. Falling back to AQ defaults.`);
+                            }
+                        } else {
+                            console.log(`ℹ️ No Thunder custom images found in Drive for ${modelNumber}. Using default AQ images.`);
+                        }
+                    } catch (driveErr: any) {
+                        console.error(`❌ Error during Thunder Drive lookup for ${modelNumber}:`, driveErr?.message || driveErr);
+                        // Non-fatal: keep the default images
+                    }
+                } else if (!thunderImagesSynced && (!thunderFolderId || !thunderKeyFile)) {
+                    console.warn(`⚠️ Thunder Drive env vars not set. Skipping image override for ${modelNumber}.`);
+                } else {
+                    // Already synced — carry over the permanent Shopify File URLs
+                    if (existingProduct?.images && existingProduct.images.length > 0) {
+                        images = existingProduct.images;
+                        console.log(`ℹ️ Thunder images already synced for ${modelNumber}. Preserving existing images.`);
+                    }
+                }
+            } else {
+                // --- STANDARD MANUFACTURER LOGIC ---
+                const overrideImage = await this.googleDrive.findImageOverride(modelNumber);
+                if (overrideImage) {
+                    images = [{ src: '', attachment: overrideImage.base64 }];
+                }
             }
 
             const updateData = {
@@ -213,7 +287,8 @@ export class SyncManager {
                 categoryValues: aqProduct.categoryValues || [],
                 images: images,
                 productType: aqProduct.productCategory?.name || 'General',
-                status: 'staged', // Force un-archive on new ingest
+                status: existingProduct && existingProduct.status !== 'archived' ? existingProduct.status : 'staged', // Re-stage archived, preserve staged/synced
+                thunderImagesSynced: thunderImagesSynced
             };
 
             await Product.findOneAndUpdate(

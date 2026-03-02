@@ -1,10 +1,14 @@
 import Shopify from 'shopify-api-node';
+import axios from 'axios';
+import FormData from 'form-data';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 export class ShopifyClient {
     private shopify: Shopify | undefined;
+    private shopName: string = '';
+    private accessToken: string = '';
 
     constructor() {
         const shopName = process.env.SHOPIFY_SHOP_NAME;
@@ -14,6 +18,8 @@ export class ShopifyClient {
             console.warn('⚠️  Shopify credentials not found in env. ShopifyClient will be disabled.');
             return;
         }
+        this.shopName = shopName;
+        this.accessToken = accessToken;
 
         this.shopify = new Shopify({
             shopName: shopName,
@@ -87,5 +93,159 @@ export class ShopifyClient {
             console.error('Error setting metafield:', error);
             // Fallback/Retry logic would go here
         }
+    }
+
+    /**
+     * Upload an image buffer directly to Shopify Files via GraphQL
+     */
+    async uploadToShopifyFiles(fileBuffer: Buffer, filename: string, mimeType: string): Promise<string> {
+        if (!this.shopName || !this.accessToken) {
+            throw new Error('ShopifyClient is not initialized. Check SHOPIFY_SHOP_NAME and SHOPIFY_ACCESS_TOKEN env vars.');
+        }
+        const shopDomain = this.shopName.includes('.myshopify.com') ? this.shopName : `${this.shopName}.myshopify.com`;
+        const graphqlEndpoint = `https://${shopDomain}/admin/api/2024-10/graphql.json`;
+        
+        console.log(`📡 Shopify GraphQL Upload to: ${shopDomain}`);
+        
+        // Step 1: Create staged upload target
+        const stagedUploadMutation = `
+            mutation stagedUploadsCreate($input: [StagedUploadInput!]!) {
+                stagedUploadsCreate(input: $input) {
+                    stagedTargets {
+                        url
+                        resourceUrl
+                        parameters {
+                            name
+                            value
+                        }
+                    }
+                    userErrors {
+                        field
+                        message
+                    }
+                }
+            }
+        `;
+
+        const stagedResponse = await axios.post(
+            graphqlEndpoint,
+            {
+                query: stagedUploadMutation,
+                variables: {
+                    input: [{
+                        filename: filename,
+                        mimeType: mimeType,
+                        resource: "FILE",
+                        httpMethod: "POST"
+                    }]
+                }
+            },
+            {
+                headers: {
+                    'X-Shopify-Access-Token': this.accessToken,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        if (stagedResponse.data.errors) {
+            console.error('❌ Shopify GraphQL errors:', stagedResponse.data.errors);
+            throw new Error(`Shopify API error: ${stagedResponse.data.errors[0]?.message || 'Unknown error'}`);
+        }
+
+        if (!stagedResponse.data.data?.stagedUploadsCreate) {
+            console.error('❌ stagedUploadsCreate is null. Full response:', stagedResponse.data);
+            throw new Error('Shopify API returned null. Check access token and permissions.');
+        }
+
+        const stagedData = stagedResponse.data.data.stagedUploadsCreate;
+        
+        if (stagedData.userErrors?.length > 0) {
+            throw new Error(`Staged upload error: ${stagedData.userErrors[0].message}`);
+        }
+
+        const target = stagedData.stagedTargets?.[0];
+        if (!target || !target.url || !target.resourceUrl) {
+            throw new Error('Shopify did not return a valid staged upload target.');
+        }
+        const uploadUrl = target.url;
+        const resourceUrl = target.resourceUrl;
+        const parameters = target.parameters || [];
+
+        // Step 2: Upload file to staged URL
+        const formData = new FormData();
+        
+        for (const param of parameters) {
+            formData.append(param.name, param.value);
+        }
+        
+        formData.append('file', fileBuffer, {
+            filename: filename,
+            contentType: mimeType
+        });
+
+        await axios.post(uploadUrl, formData, {
+            headers: formData.getHeaders(),
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity
+        });
+
+        // Step 3: Create the file in Shopify
+        const fileCreateMutation = `
+            mutation fileCreate($files: [FileCreateInput!]!) {
+                fileCreate(files: $files) {
+                    files {
+                        ... on MediaImage {
+                            id
+                            image {
+                                url
+                            }
+                        }
+                        ... on GenericFile {
+                            id
+                            url
+                        }
+                    }
+                    userErrors {
+                        field
+                        message
+                    }
+                }
+            }
+        `;
+
+        const fileCreateResponse = await axios.post(
+            graphqlEndpoint,
+            {
+                query: fileCreateMutation,
+                variables: {
+                    files: [{
+                        originalSource: resourceUrl,
+                        contentType: "IMAGE"
+                    }]
+                }
+            },
+            {
+                headers: {
+                    'X-Shopify-Access-Token': this.accessToken,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        const fileData = fileCreateResponse.data?.data?.fileCreate;
+        
+        if (!fileData) {
+            // The file create call returned an unexpected response, but upload likely succeeded.
+            // We return the resourceUrl which is still a valid, usable URL.
+            console.warn('⚠️ fileCreate returned unexpected shape but upload succeeded. Using resourceUrl.');
+            return resourceUrl;
+        }
+
+        if (fileData.userErrors?.length > 0) {
+            throw new Error(`File create error: ${fileData.userErrors[0].message}`);
+        }
+
+        return resourceUrl;
     }
 }
