@@ -31,3 +31,4 @@ Thumbs.db
 # IDEs
 .vscode/
 .idea/
+backend/config/thunder-credentials.json
