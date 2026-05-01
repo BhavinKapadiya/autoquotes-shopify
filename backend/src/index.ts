@@ -50,6 +50,7 @@ app.use(cors({
 app.use(express.json());
 
 import { createVariantsRouter } from './routes/variants';
+import categoriesRouter from './routes/categories';
 
 // ... other imports
 
@@ -67,6 +68,7 @@ const syncManager = new SyncManager(aqClient, shopifyClient, pricingEngine, goog
 // Initialize Routes with Dependencies
 app.use('/api/products', createImageUploadRouter(syncManager));
 app.use('/api/products', createVariantsRouter(syncManager));
+app.use('/api/categories', categoriesRouter);
 
 // --- Shopify Auth Routes ---
 app.get(shopify.config.auth.path, shopify.auth.begin());

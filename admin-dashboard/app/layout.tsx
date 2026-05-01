@@ -44,6 +44,9 @@ export default function RootLayout({
                     <a href="/staging" className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors">
                       Staging & Review
                     </a>
+                    <a href="/categories" className="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                      Category Rules
+                    </a>
                   </div>
                 </div>
               </div>

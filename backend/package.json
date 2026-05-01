@@ -15,6 +15,7 @@
     "@shopify/shopify-api": "^12.3.0",
     "@shopify/shopify-app-express": "^6.0.5",
     "@types/multer": "^2.0.0",
+    "@types/papaparse": "^5.5.2",
     "axios": "^1.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -23,6 +24,7 @@
     "googleapis": "^169.0.0",
     "mongoose": "^9.1.4",
     "multer": "^2.0.2",
+    "papaparse": "^5.5.3",
     "shopify-api-node": "^3.12.1",
     "uuid": "^9.0.1"
   },

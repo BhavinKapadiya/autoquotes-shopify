@@ -304,13 +304,13 @@ export class SyncManager {
     async syncToShopify(specificProductId?: string) {
         console.log('Starting SYNC to Shopify...');
         const Product = require('../models/Product').default;
+        const CategoryRule = require('../models/CategoryRule').default;
+        const { VariantGroupAdapter } = require('./VariantGroupAdapter');
 
         let productsToSync = [];
         if (specificProductId) {
             productsToSync = await Product.find({ aqProductId: specificProductId });
         } else {
-            // Sync everything that is 'staged' (or just everything for now as users want full sync)
-            // Also include 'archived' products that are on Shopify, to ensure they get set to Draft if they aren't already.
             productsToSync = await Product.find({
                 $or: [
                     { status: { $in: ['staged', 'synced'] } },
@@ -321,9 +321,131 @@ export class SyncManager {
 
         console.log(`Found ${productsToSync.length} products to sync.`);
 
+        // Fetch Category Rules
+        const categoryRules = await CategoryRule.find();
+        
+        // Fetch Variant Mappings
+        const variantGroupAdapter = new VariantGroupAdapter();
+        const variantMappings = await variantGroupAdapter.getVariantMappings();
+
+        // Group products by Prefix
+        const groups = new Map<string, any[]>();
+        const ungroupedProducts = [];
+
         for (const product of productsToSync) {
+            const mapping = variantMappings.get(product.aqModelNumber);
+            if (mapping) {
+                const prefix = mapping.prefix;
+                if (!groups.has(prefix)) groups.set(prefix, []);
+                groups.get(prefix)!.push(product);
+            } else {
+                ungroupedProducts.push(product);
+            }
+        }
+
+        console.log(`Grouped into ${groups.size} variant groups. ${ungroupedProducts.length} remain ungrouped.`);
+
+        // Process Grouped Products
+        for (const [prefix, groupedProds] of groups) {
             try {
-                // Construct Body HTML from stored data
+                // Determine Parent (first non-archived if possible, otherwise first)
+                let parentProduct = groupedProds.find((p: any) => p.status !== 'archived') || groupedProds[0];
+                
+                // Construct Body HTML from Parent
+                let bodyHtml = `<p>${parentProduct.aqMfrName} ${parentProduct.aqModelNumber}</p>`;
+                if (parentProduct.descriptionHtml) {
+                    bodyHtml += `<p>${parentProduct.descriptionHtml}</p>`;
+                }
+
+                if (parentProduct.categoryValues && parentProduct.categoryValues.length > 0) {
+                    bodyHtml += `<h3>Product Features & Specs</h3>`;
+                    bodyHtml += `<table border="1" cellpadding="5" style="border-collapse:collapse; width:100%;"><tbody>`;
+                    parentProduct.categoryValues.forEach((cv: any) => {
+                        bodyHtml += `<tr><td style="font-weight:bold;">${cv.property}</td><td>${cv.value}</td></tr>`;
+                    });
+                    bodyHtml += `</tbody></table>`;
+                }
+
+                // Inject Category Tags
+                let tags = parentProduct.tags ? [...parentProduct.tags] : [];
+                const rule = categoryRules.find((r: any) => r.vendor === parentProduct.aqMfrName && r.productType === parentProduct.productType);
+                if (rule) {
+                    const cTags = [`Category_${rule.parentCategory}`, `Sub_${rule.subCategory}`, `Child_${rule.childCategory}`];
+                    // Add only unique tags
+                    cTags.forEach(t => { if (!tags.includes(t)) tags.push(t); });
+                }
+
+                // Construct Variants
+                let shopifyVariants: any[] = [];
+                for (const prod of groupedProds) {
+                    const mapping = variantMappings.get(prod.aqModelNumber);
+                    if (mapping) {
+                        shopifyVariants.push({
+                            price: prod.finalPrice,
+                            sku: prod.aqModelNumber,
+                            option1: mapping.design || 'Standard',
+                            option2: mapping.size || 'Standard',
+                            inventory_management: null
+                        });
+                    }
+                }
+
+                const shopifyStatus = parentProduct.status === 'archived' ? 'draft' : 'active';
+                const shopifyData = {
+                    status: shopifyStatus,
+                    title: parentProduct.title,
+                    body_html: bodyHtml,
+                    vendor: parentProduct.aqMfrName,
+                    product_type: parentProduct.productType,
+                    tags: tags,
+                    handle: `${parentProduct.aqMfrName}-${prefix}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+                    options: [{ name: 'Design' }, { name: 'Size' }],
+                    variants: shopifyVariants,
+                    images: parentProduct.images,
+                    metafields: [
+                        { key: 'prefix', value: prefix, type: 'single_line_text_field', namespace: 'custom' },
+                        { key: 'aq_id', value: parentProduct.aqProductId, type: 'single_line_text_field', namespace: 'custom' },
+                        ...(parentProduct.specSheetUrl ? [{ key: 'spec_sheet_url', value: parentProduct.specSheetUrl, type: 'url', namespace: 'custom' }] : [])
+                    ]
+                };
+
+                // Push to Shopify
+                const existing = await this.shopifyClient.findProductByHandle(shopifyData.handle);
+                let shopifyId = '';
+                if (existing) {
+                    const res = await this.shopifyClient.updateProduct(existing.id, shopifyData);
+                    shopifyId = res ? `${res.id}` : '';
+                } else {
+                    console.log(`Creating ${shopifyData.handle}...`);
+                    const res = await this.shopifyClient.createProduct(shopifyData);
+                    shopifyId = res ? `${res.id}` : '';
+                }
+
+                // Update DB Status for ALL products in group
+                for (const prod of groupedProds) {
+                    if (prod.status !== 'archived') {
+                        prod.status = 'synced';
+                    }
+                    prod.shopifyId = shopifyId;
+                    prod.shopifyHandle = shopifyData.handle;
+                    prod.lastSynced = new Date();
+                    await prod.save();
+                }
+
+            } catch (err: any) {
+                console.error(`Failed to sync group ${prefix} to Shopify:`, err);
+                for (const prod of groupedProds) {
+                    prod.status = 'error';
+                    prod.syncError = JSON.stringify(err);
+                    await prod.save();
+                }
+            }
+        }
+
+        // Process Ungrouped Products (Legacy Logic)
+        for (const product of ungroupedProducts) {
+            try {
+                // Construct Body HTML
                 let bodyHtml = `<p>${product.aqMfrName} ${product.aqModelNumber}</p>`;
                 if (product.descriptionHtml) {
                     bodyHtml += `<p>${product.descriptionHtml}</p>`;
@@ -336,8 +458,14 @@ export class SyncManager {
                         bodyHtml += `<tr><td style="font-weight:bold;">${cv.property}</td><td>${cv.value}</td></tr>`;
                     });
                     bodyHtml += `</tbody></table>`;
-                } else {
-                    // Fallback text if no table
+                }
+
+                // Inject Category Tags
+                let tags = product.tags ? [...product.tags] : [];
+                const rule = categoryRules.find((r: any) => r.vendor === product.aqMfrName && r.productType === product.productType);
+                if (rule) {
+                    const cTags = [`Category_${rule.parentCategory}`, `Sub_${rule.subCategory}`, `Child_${rule.childCategory}`];
+                    cTags.forEach(t => { if (!tags.includes(t)) tags.push(t); });
                 }
 
                 // Check for Native DB Variants First
@@ -345,8 +473,6 @@ export class SyncManager {
                 let options = undefined;
 
                 if (product.variants && product.variants.length > 0) {
-                    console.log(`Using ${product.variants.length} Native DB Variants`);
-                    
                     // Group options
                     const optionsMap = new Map();
                     product.variants.forEach((v: any) => {
@@ -377,7 +503,6 @@ export class SyncManager {
                     const customVariants = await this.googleSheets.getVariants(product.aqModelNumber);
                     
                     if (customVariants.length > 0) {
-                         // ... existing google sheets logic ...
                          shopifyVariants = customVariants.map(v => {
                             const variantPrice = product.finalPrice + (v.priceMod || 0);
                             return {
@@ -399,17 +524,14 @@ export class SyncManager {
                     }
                 }
 
-                // Determine Shopify status
-                // If local status is 'archived', we set to 'draft'.
-                // If local status is 'staged'/'synced', we set to 'active'.
                 const shopifyStatus = product.status === 'archived' ? 'draft' : 'active';
-
                 const shopifyData = {
                     status: shopifyStatus,
                     title: product.title,
                     body_html: bodyHtml,
                     vendor: product.aqMfrName,
                     product_type: product.productType,
+                    tags: tags,
                     handle: `${product.aqMfrName}-${product.aqModelNumber}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
                     options: options,
                     variants: shopifyVariants,
@@ -421,11 +543,9 @@ export class SyncManager {
                     ]
                 };
 
-                // Push
                 const existing = await this.shopifyClient.findProductByHandle(shopifyData.handle);
                 let shopifyId = '';
                 if (existing) {
-                    // console.log(`Updating ${shopifyData.handle}...`);
                     const res = await this.shopifyClient.updateProduct(existing.id, shopifyData);
                     shopifyId = res ? `${res.id}` : '';
                 } else {
@@ -434,8 +554,6 @@ export class SyncManager {
                     shopifyId = res ? `${res.id}` : '';
                 }
 
-                // Update DB Status
-                // Only mark as 'synced' if it's strictly active. If it was archived, leave it archived.
                 if (product.status !== 'archived') {
                     product.status = 'synced';
                 }
@@ -444,7 +562,7 @@ export class SyncManager {
                 product.lastSynced = new Date();
                 await product.save();
 
-            } catch (err) {
+            } catch (err: any) {
                 console.error(`Failed to sync ${product.aqModelNumber} to Shopify:`, err);
                 product.status = 'error';
                 product.syncError = JSON.stringify(err);
