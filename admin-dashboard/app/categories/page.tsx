@@ -32,8 +32,8 @@ export default function CategoryRulesPage() {
     const fetchRules = async () => {
         setLoading(true);
         try {
-            // Note: Update to use NEXT_PUBLIC_API_URL or similar if deployed elsewhere
-            const res = await fetch('http://localhost:5000/api/categories/rules');
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://autoquotes-shopify.onrender.com';
+            const res = await fetch(`${backendUrl}/api/categories/rules`);
             if (!res.ok) throw new Error('Failed to fetch rules');
             const data = await res.json();
             setRules(data);
@@ -53,7 +53,8 @@ export default function CategoryRulesPage() {
         setError('');
         setSuccessMsg('');
         try {
-            const res = await fetch('http://localhost:5000/api/categories/rules', {
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://autoquotes-shopify.onrender.com';
+            const res = await fetch(`${backendUrl}/api/categories/rules`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(form)
@@ -79,7 +80,8 @@ export default function CategoryRulesPage() {
     const handleDelete = async (id: string) => {
         if (!confirm('Are you sure you want to delete this rule?')) return;
         try {
-            const res = await fetch(`http://localhost:5000/api/categories/rules/${id}`, {
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://autoquotes-shopify.onrender.com';
+            const res = await fetch(`${backendUrl}/api/categories/rules/${id}`, {
                 method: 'DELETE'
             });
             if (!res.ok) throw new Error('Failed to delete rule');
