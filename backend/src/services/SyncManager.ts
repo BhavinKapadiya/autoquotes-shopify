@@ -366,13 +366,18 @@ export class SyncManager {
                     bodyHtml += `</tbody></table>`;
                 }
 
-                // Inject Category Tags
+                // Inject Category Tags (case-insensitive match to handle vendor/productType casing differences)
                 let tags = parentProduct.tags ? [...parentProduct.tags] : [];
-                const rule = categoryRules.find((r: any) => r.vendor === parentProduct.aqMfrName && r.productType === parentProduct.productType);
+                const rule = categoryRules.find((r: any) =>
+                    r.vendor.toLowerCase().trim() === (parentProduct.aqMfrName || '').toLowerCase().trim() &&
+                    r.productType.toLowerCase().trim() === (parentProduct.productType || '').toLowerCase().trim()
+                );
                 if (rule) {
+                    console.log(`🏷️  Applying category tags for ${parentProduct.aqMfrName} / ${parentProduct.productType}: ${rule.parentCategory} > ${rule.subCategory} > ${rule.childCategory}`);
                     const cTags = [`Category_${rule.parentCategory}`, `Sub_${rule.subCategory}`, `Child_${rule.childCategory}`];
-                    // Add only unique tags
                     cTags.forEach(t => { if (!tags.includes(t)) tags.push(t); });
+                } else {
+                    console.log(`ℹ️  No category rule found for: "${parentProduct.aqMfrName}" / "${parentProduct.productType}"`);
                 }
 
                 // Construct Variants
@@ -460,12 +465,18 @@ export class SyncManager {
                     bodyHtml += `</tbody></table>`;
                 }
 
-                // Inject Category Tags
+                // Inject Category Tags (case-insensitive match to handle vendor/productType casing differences)
                 let tags = product.tags ? [...product.tags] : [];
-                const rule = categoryRules.find((r: any) => r.vendor === product.aqMfrName && r.productType === product.productType);
+                const rule = categoryRules.find((r: any) =>
+                    r.vendor.toLowerCase().trim() === (product.aqMfrName || '').toLowerCase().trim() &&
+                    r.productType.toLowerCase().trim() === (product.productType || '').toLowerCase().trim()
+                );
                 if (rule) {
+                    console.log(`🏷️  Applying category tags for ${product.aqMfrName} / ${product.productType}: ${rule.parentCategory} > ${rule.subCategory} > ${rule.childCategory}`);
                     const cTags = [`Category_${rule.parentCategory}`, `Sub_${rule.subCategory}`, `Child_${rule.childCategory}`];
                     cTags.forEach(t => { if (!tags.includes(t)) tags.push(t); });
+                } else {
+                    console.log(`ℹ️  No category rule found for: "${product.aqMfrName}" / "${product.productType}"`);
                 }
 
                 // Check for Native DB Variants First
