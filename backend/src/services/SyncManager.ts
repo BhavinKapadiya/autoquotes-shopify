@@ -330,6 +330,21 @@ export class SyncManager {
 
         // Fetch Category Rules
         const categoryRules = await CategoryRule.find();
+
+        // Ensure Smart Collections Exist Before Processing
+        if (this.shopifyClient) {
+            console.log('📋 Ensuring Smart Collections exist for all Category Rules...');
+            for (const r of categoryRules) {
+                try {
+                    if (r.productType) await this.shopifyClient.ensureSmartCollection(r.productType, r.productType);
+                    if (r.parentCategory) await this.shopifyClient.ensureSmartCollection(r.parentCategory, `Category_${r.parentCategory}`);
+                    if (r.subCategory) await this.shopifyClient.ensureSmartCollection(r.subCategory, `Sub_${r.subCategory}`);
+                    if (r.childCategory) await this.shopifyClient.ensureSmartCollection(r.childCategory, `Child_${r.childCategory}`);
+                } catch (collectionErr: any) {
+                    console.error(`⚠️ Failed to create collection for rule ${r.vendor} - ${r.productType}:`, collectionErr.message);
+                }
+            }
+        }
         
         // Fetch Variant Mappings
         const variantGroupAdapter = new VariantGroupAdapter();
