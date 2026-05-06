@@ -375,16 +375,34 @@ export class SyncManager {
 
                 // Inject Category Tags (case-insensitive match to handle vendor/productType casing differences)
                 let tags = parentProduct.tags ? [...parentProduct.tags] : [];
-                const rule = categoryRules.find((r: any) =>
+                
+                // 1. Existing Logic: Exact match on productType
+                const exactRule = categoryRules.find((r: any) =>
                     r.vendor.toLowerCase().trim() === (parentProduct.aqMfrName || '').toLowerCase().trim() &&
                     r.productType.toLowerCase().trim() === (parentProduct.productType || '').toLowerCase().trim()
                 );
-                if (rule) {
-                    console.log(`🏷️  Applying category tags for ${parentProduct.aqMfrName} / ${parentProduct.productType}: ${rule.parentCategory} > ${rule.subCategory} > ${rule.childCategory}`);
-                    const cTags = [`Category_${rule.parentCategory}`, `Sub_${rule.subCategory}`, `Child_${rule.childCategory}`];
+                if (exactRule) {
+                    console.log(`🏷️  Applying category tags for ${parentProduct.aqMfrName} / ${parentProduct.productType}: ${exactRule.parentCategory} > ${exactRule.subCategory} > ${exactRule.childCategory}`);
+                    const cTags = [`Category_${exactRule.parentCategory}`, `Sub_${exactRule.subCategory}`, `Child_${exactRule.childCategory}`];
                     cTags.forEach(t => { if (!tags.includes(t)) tags.push(t); });
                 } else {
-                    console.log(`ℹ️  No category rule found for: "${parentProduct.aqMfrName}" / "${parentProduct.productType}"`);
+                    console.log(`ℹ️  No category rule found for exact match: "${parentProduct.aqMfrName}" / "${parentProduct.productType}"`);
+                }
+
+                // 2. New Logic: Dynamic Description Keyword Scanning
+                const plainTextDesc = (parentProduct.descriptionHtml || '').replace(/<[^>]*>?/gm, ' ').toLowerCase();
+                const vendorRules = categoryRules.filter((r: any) => 
+                    r.vendor.toLowerCase().trim() === (parentProduct.aqMfrName || '').toLowerCase().trim()
+                );
+                
+                for (const r of vendorRules) {
+                    const keyword = r.productType.toLowerCase().trim();
+                    if (keyword && plainTextDesc.includes(keyword)) {
+                        if (!tags.includes(r.productType)) {
+                            tags.push(r.productType);
+                            console.log(`🔍 Keyword found in description! Applied tag: "${r.productType}" to ${parentProduct.aqModelNumber}`);
+                        }
+                    }
                 }
 
                 // Construct Variants
@@ -474,16 +492,34 @@ export class SyncManager {
 
                 // Inject Category Tags (case-insensitive match to handle vendor/productType casing differences)
                 let tags = product.tags ? [...product.tags] : [];
-                const rule = categoryRules.find((r: any) =>
+                
+                // 1. Existing Logic: Exact match on productType
+                const exactRule = categoryRules.find((r: any) =>
                     r.vendor.toLowerCase().trim() === (product.aqMfrName || '').toLowerCase().trim() &&
                     r.productType.toLowerCase().trim() === (product.productType || '').toLowerCase().trim()
                 );
-                if (rule) {
-                    console.log(`🏷️  Applying category tags for ${product.aqMfrName} / ${product.productType}: ${rule.parentCategory} > ${rule.subCategory} > ${rule.childCategory}`);
-                    const cTags = [`Category_${rule.parentCategory}`, `Sub_${rule.subCategory}`, `Child_${rule.childCategory}`];
+                if (exactRule) {
+                    console.log(`🏷️  Applying category tags for ${product.aqMfrName} / ${product.productType}: ${exactRule.parentCategory} > ${exactRule.subCategory} > ${exactRule.childCategory}`);
+                    const cTags = [`Category_${exactRule.parentCategory}`, `Sub_${exactRule.subCategory}`, `Child_${exactRule.childCategory}`];
                     cTags.forEach(t => { if (!tags.includes(t)) tags.push(t); });
                 } else {
-                    console.log(`ℹ️  No category rule found for: "${product.aqMfrName}" / "${product.productType}"`);
+                    console.log(`ℹ️  No category rule found for exact match: "${product.aqMfrName}" / "${product.productType}"`);
+                }
+
+                // 2. New Logic: Dynamic Description Keyword Scanning
+                const plainTextDesc = (product.descriptionHtml || '').replace(/<[^>]*>?/gm, ' ').toLowerCase();
+                const vendorRules = categoryRules.filter((r: any) => 
+                    r.vendor.toLowerCase().trim() === (product.aqMfrName || '').toLowerCase().trim()
+                );
+                
+                for (const r of vendorRules) {
+                    const keyword = r.productType.toLowerCase().trim();
+                    if (keyword && plainTextDesc.includes(keyword)) {
+                        if (!tags.includes(r.productType)) {
+                            tags.push(r.productType);
+                            console.log(`🔍 Keyword found in description! Applied tag: "${r.productType}" to ${product.aqModelNumber}`);
+                        }
+                    }
                 }
 
                 // Check for Native DB Variants First
