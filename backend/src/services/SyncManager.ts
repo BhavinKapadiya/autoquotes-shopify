@@ -402,6 +402,9 @@ export class SyncManager {
                 
                 for (const r of vendorRules) {
                     const keyword = r.productType.toLowerCase().trim();
+                    const subKeyword = (r.subCategory || '').toLowerCase().trim();
+                    const childKeyword = (r.childCategory || '').toLowerCase().trim();
+
                     if (keyword && searchableText.includes(keyword)) {
                         // Apply the keyword tag
                         if (!tags.includes(r.productType)) {
@@ -412,6 +415,18 @@ export class SyncManager {
                         if (r.parentCategory && !tags.includes(`Category_${r.parentCategory}`)) tags.push(`Category_${r.parentCategory}`);
                         if (r.subCategory && !tags.includes(`Sub_${r.subCategory}`)) tags.push(`Sub_${r.subCategory}`);
                         if (r.childCategory && !tags.includes(`Child_${r.childCategory}`)) tags.push(`Child_${r.childCategory}`);
+                    }
+
+                    // Independent check for Sub Category keyword
+                    if (subKeyword && searchableText.includes(subKeyword) && !tags.includes(r.subCategory)) {
+                        tags.push(r.subCategory);
+                        console.log(`🔍 Sub-Category Keyword "${r.subCategory}" found! Applied raw tag to ${parentProduct.aqModelNumber}`);
+                    }
+
+                    // Independent check for Child Category keyword
+                    if (childKeyword && searchableText.includes(childKeyword) && !tags.includes(r.childCategory)) {
+                        tags.push(r.childCategory);
+                        console.log(`🔍 Child-Category Keyword "${r.childCategory}" found! Applied raw tag to ${parentProduct.aqModelNumber}`);
                     }
                 }
 
@@ -529,6 +544,9 @@ export class SyncManager {
                 
                 for (const r of vendorRules) {
                     const keyword = r.productType.toLowerCase().trim();
+                    const subKeyword = (r.subCategory || '').toLowerCase().trim();
+                    const childKeyword = (r.childCategory || '').toLowerCase().trim();
+
                     if (keyword && searchableText.includes(keyword)) {
                         // Apply the keyword tag
                         if (!tags.includes(r.productType)) {
@@ -539,6 +557,18 @@ export class SyncManager {
                         if (r.parentCategory && !tags.includes(`Category_${r.parentCategory}`)) tags.push(`Category_${r.parentCategory}`);
                         if (r.subCategory && !tags.includes(`Sub_${r.subCategory}`)) tags.push(`Sub_${r.subCategory}`);
                         if (r.childCategory && !tags.includes(`Child_${r.childCategory}`)) tags.push(`Child_${r.childCategory}`);
+                    }
+
+                    // Independent check for Sub Category keyword
+                    if (subKeyword && searchableText.includes(subKeyword) && !tags.includes(r.subCategory)) {
+                        tags.push(r.subCategory);
+                        console.log(`🔍 Sub-Category Keyword "${r.subCategory}" found! Applied raw tag to ${product.aqModelNumber}`);
+                    }
+
+                    // Independent check for Child Category keyword
+                    if (childKeyword && searchableText.includes(childKeyword) && !tags.includes(r.childCategory)) {
+                        tags.push(r.childCategory);
+                        console.log(`🔍 Child-Category Keyword "${r.childCategory}" found! Applied raw tag to ${product.aqModelNumber}`);
                     }
                 }
 
