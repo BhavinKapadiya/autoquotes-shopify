@@ -68,18 +68,25 @@ export class SyncManager {
                 { upsert: true, new: true }
             );
 
-            // 4. Archive products from removed manufacturers
-            if (removedIds.length > 0) {
-                console.log(`Manufacturers disabled: ${removedIds.join(', ')}. Archiving products...`);
-                const result = await Product.updateMany(
-                    { aqMfrId: { $in: removedIds } },
-                    { status: 'archived' }
-                );
-                console.log(`Archived ${result.modifiedCount} products.`);
+            // 4. Archive products from ANY manufacturer not in the enabled list
+            console.log(`Archiving products for manufacturers not in the enabled list...`);
+            
+            // Find which manufacturers are being newly archived so we can sync their deletion to Shopify
+            const newlyArchivedProducts = await Product.find({
+                aqMfrId: { $nin: ids },
+                status: { $ne: 'archived' }
+            }).distinct('aqMfrId');
 
-                // BACKGROUND JOB: Sync Archival to Shopify
-                // We don't await this so the UI response is fast, but we log errors.
-                this.syncArchivalsToShopify(removedIds).catch(err => console.error('Background archival failed:', err));
+            const result = await Product.updateMany(
+                { aqMfrId: { $nin: ids } },
+                { status: 'archived' }
+            );
+            console.log(`Archived ${result.modifiedCount} products.`);
+
+            // BACKGROUND JOB: Sync Archival to Shopify
+            // We don't await this so the UI response is fast, but we log errors.
+            if (newlyArchivedProducts.length > 0) {
+                this.syncArchivalsToShopify(newlyArchivedProducts).catch(err => console.error('Background archival failed:', err));
             }
 
         } catch (error) {
