@@ -389,19 +389,29 @@ export class SyncManager {
                     console.log(`ℹ️  No category rule found for exact match: "${parentProduct.aqMfrName}" / "${parentProduct.productType}"`);
                 }
 
-                // 2. New Logic: Dynamic Description Keyword Scanning
-                const plainTextDesc = (parentProduct.descriptionHtml || '').replace(/<[^>]*>?/gm, ' ').toLowerCase();
+                // 2. New Logic: Dynamic Keyword Scanning (Title, Product Type, Description)
+                const searchableText = [
+                    parentProduct.title || '',
+                    parentProduct.productType || '',
+                    (parentProduct.descriptionHtml || '').replace(/<[^>]*>?/gm, ' ')
+                ].join(' ').toLowerCase();
+
                 const vendorRules = categoryRules.filter((r: any) => 
                     r.vendor.toLowerCase().trim() === (parentProduct.aqMfrName || '').toLowerCase().trim()
                 );
                 
                 for (const r of vendorRules) {
                     const keyword = r.productType.toLowerCase().trim();
-                    if (keyword && plainTextDesc.includes(keyword)) {
+                    if (keyword && searchableText.includes(keyword)) {
+                        // Apply the keyword tag
                         if (!tags.includes(r.productType)) {
                             tags.push(r.productType);
-                            console.log(`🔍 Keyword found in description! Applied tag: "${r.productType}" to ${parentProduct.aqModelNumber}`);
+                            console.log(`🔍 Keyword "${r.productType}" found in product text! Applied tag to ${parentProduct.aqModelNumber}`);
                         }
+                        // Apply the hierarchy tags
+                        if (r.parentCategory && !tags.includes(`Category_${r.parentCategory}`)) tags.push(`Category_${r.parentCategory}`);
+                        if (r.subCategory && !tags.includes(`Sub_${r.subCategory}`)) tags.push(`Sub_${r.subCategory}`);
+                        if (r.childCategory && !tags.includes(`Child_${r.childCategory}`)) tags.push(`Child_${r.childCategory}`);
                     }
                 }
 
@@ -506,19 +516,29 @@ export class SyncManager {
                     console.log(`ℹ️  No category rule found for exact match: "${product.aqMfrName}" / "${product.productType}"`);
                 }
 
-                // 2. New Logic: Dynamic Description Keyword Scanning
-                const plainTextDesc = (product.descriptionHtml || '').replace(/<[^>]*>?/gm, ' ').toLowerCase();
+                // 2. New Logic: Dynamic Keyword Scanning (Title, Product Type, Description)
+                const searchableText = [
+                    product.title || '',
+                    product.productType || '',
+                    (product.descriptionHtml || '').replace(/<[^>]*>?/gm, ' ')
+                ].join(' ').toLowerCase();
+
                 const vendorRules = categoryRules.filter((r: any) => 
                     r.vendor.toLowerCase().trim() === (product.aqMfrName || '').toLowerCase().trim()
                 );
                 
                 for (const r of vendorRules) {
                     const keyword = r.productType.toLowerCase().trim();
-                    if (keyword && plainTextDesc.includes(keyword)) {
+                    if (keyword && searchableText.includes(keyword)) {
+                        // Apply the keyword tag
                         if (!tags.includes(r.productType)) {
                             tags.push(r.productType);
-                            console.log(`🔍 Keyword found in description! Applied tag: "${r.productType}" to ${product.aqModelNumber}`);
+                            console.log(`🔍 Keyword "${r.productType}" found in product text! Applied tag to ${product.aqModelNumber}`);
                         }
+                        // Apply the hierarchy tags
+                        if (r.parentCategory && !tags.includes(`Category_${r.parentCategory}`)) tags.push(`Category_${r.parentCategory}`);
+                        if (r.subCategory && !tags.includes(`Sub_${r.subCategory}`)) tags.push(`Sub_${r.subCategory}`);
+                        if (r.childCategory && !tags.includes(`Child_${r.childCategory}`)) tags.push(`Child_${r.childCategory}`);
                     }
                 }
 
