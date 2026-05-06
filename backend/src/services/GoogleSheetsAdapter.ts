@@ -10,8 +10,8 @@ export class GoogleSheetsAdapter {
     private CACHE_TTL = 1000 * 60 * 5; // 5 minutes
 
     constructor() {
-        this.spreadsheetId = process.env.GOOGLE_SHEET_ID;
-        const keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+        this.spreadsheetId = process.env.THUNDER_SHEET_ID;
+        const keyFile = process.env.THUNDER_GOOGLE_CREDENTIALS;
 
         if (!this.spreadsheetId || !keyFile) {
             console.warn('⚠️ Google Sheets credentials missing. Variant sync will be skipped.');

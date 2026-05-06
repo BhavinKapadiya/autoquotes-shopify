@@ -21,8 +21,8 @@ export class GoogleDriveAdapter {
                 console.error('❌ Failed to initialize Thunder GoogleDriveAdapter:', err);
             }
         } else {
-            this.folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-            const keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+            this.folderId = process.env.THUNDER_DRIVE_FOLDER_ID;
+            const keyFile = process.env.THUNDER_GOOGLE_CREDENTIALS;
 
             if (!this.folderId || !keyFile) {
                 console.warn('⚠️ Google Drive credentials missing. Image overrides will be skipped.');
