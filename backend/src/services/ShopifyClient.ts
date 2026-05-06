@@ -96,6 +96,43 @@ export class ShopifyClient {
     }
 
     /**
+     * Ensure a Smart Collection exists with the given title and tag rule
+     */
+    async ensureSmartCollection(title: string, tagCondition: string) {
+        if (!this.shopify || !title || !tagCondition) return null;
+        try {
+            // Check if collection with this title already exists
+            const existingCollections = await this.shopify.smartCollection.list({ title });
+            
+            // Check for an exact title match (just to be safe, though Shopify filters by title)
+            const exactMatch = existingCollections.find(c => c.title.toLowerCase() === title.toLowerCase());
+            if (exactMatch) {
+                console.log(`ℹ️ Smart Collection "${title}" already exists. Skipping creation.`);
+                return exactMatch;
+            }
+
+            console.log(`➕ Creating new Smart Collection: "${title}" (Rule: Tag equals "${tagCondition}")`);
+            const newCollection = await this.shopify.smartCollection.create({
+                title: title,
+                rules: [
+                    {
+                        column: 'tag',
+                        relation: 'equals',
+                        condition: tagCondition
+                    }
+                ]
+            });
+            return newCollection;
+        } catch (error: any) {
+            console.error(`Error ensuring smart collection "${title}":`, error);
+            if (error.response && error.response.body) {
+                console.error('Shopify Validation Errors:', JSON.stringify(error.response.body, null, 2));
+            }
+            throw error;
+        }
+    }
+
+    /**
      * Upload an image buffer directly to Shopify Files via GraphQL
      */
     async uploadToShopifyFiles(fileBuffer: Buffer, filename: string, mimeType: string): Promise<string> {
