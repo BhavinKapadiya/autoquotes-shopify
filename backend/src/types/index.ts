@@ -49,6 +49,7 @@ export interface AQProduct {
         property: string;
         value: string;
     }[];
+    certifications?: string[];
     // Keep resources as optional fallback if some endpoints use it, but primary is 'documents'
     resources?: {
         type: string;

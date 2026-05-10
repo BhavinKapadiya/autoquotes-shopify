@@ -387,14 +387,23 @@ export class SyncManager {
                 title: `${mfrName} ${modelNumber}`,
                 descriptionHtml: aqProduct.specifications?.longMarketingSpecification || aqProduct.specifications?.AQSpecification || '',
                 listPrice: basePrice,
-                aqNetPrice: netPrice, // Save raw AQ net
-                netCost: netCost, // Save calculated net cost
+                aqNetPrice: netPrice,
+                netCost: netCost,
                 finalPrice: finalPrice,
                 specSheetUrl: specSheetUrl,
                 categoryValues: aqProduct.categoryValues || [],
                 images: images,
                 productType: aqProduct.productCategory?.name || 'General',
-                status: existingProduct && existingProduct.status !== 'archived' ? existingProduct.status : 'staged', // Re-stage archived, preserve staged/synced
+                // Persist physical dimensions so AQ-native grouping can read them at sync time
+                productDimension: aqProduct.productDimension || {},
+                certifications: aqProduct.certifications || [],
+                // Status logic:
+                //   archived  -> re-stage (product was re-enabled)
+                //   error     -> re-stage (retry on next sync)
+                //   staged/synced -> preserve
+                status: (existingProduct && ['staged', 'synced'].includes(existingProduct.status))
+                    ? existingProduct.status
+                    : 'staged',
                 thunderImagesSynced: thunderImagesSynced
             };
 
@@ -579,8 +588,9 @@ export class SyncManager {
                         shopifyVariants.push({
                             price: prod.finalPrice,
                             sku: prod.aqModelNumber,
-                            option1: mapping.design || 'Standard',
-                            option2: mapping.size || 'Standard',
+                            // Shopify hard limit: option values max 255 chars
+                            option1: (mapping.design || 'Standard').toString().substring(0, 255),
+                            option2: (mapping.size || 'Standard').toString().substring(0, 255),
                             inventory_management: null
                         });
                     }

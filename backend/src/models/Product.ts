@@ -26,9 +26,18 @@ export interface IProduct extends Document {
     // Raw Data (Stored for reference/re-processing)
     images: { src: string, attachment?: string }[];
     categoryValues: { property: string, value: string }[];
-    variants: any[]; // Store calculated variants
+    variants: any[];
     tags: string[];
     productType: string;
+    // Physical dimensions — needed by AQ-native grouping at sync time
+    productDimension?: {
+        productHeight?: number;
+        productWidth?: number;
+        productDepth?: number;
+        shippingCube?: number;
+        shippingWeight?: number;
+    };
+    certifications?: string[];
 
     // Shopify Info
     shopifyId?: string;
@@ -76,6 +85,14 @@ const ProductSchema: Schema = new Schema({
     }],
     tags: [String],
     productType: { type: String },
+    productDimension: {
+        productHeight: { type: Number },
+        productWidth:  { type: Number },
+        productDepth:  { type: Number },
+        shippingCube:  { type: Number },
+        shippingWeight: { type: Number },
+    },
+    certifications: [{ type: String }],
 
     shopifyId: { type: String },
     shopifyHandle: { type: String },

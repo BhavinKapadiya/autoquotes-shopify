@@ -72,7 +72,7 @@ export class AQClient {
             const raw = Array.isArray(response.data) ? response.data : (response.data?.data || []);
 
             console.log(`✅ Received ${raw.length} manufacturers from AQ API`);
-            console.log('Raw Manufacturers Data (first 3):', JSON.stringify(raw.slice(0, 3)));
+            // console.log('Raw Manufacturers Data (first 3):', JSON.stringify(raw.slice(0, 3)));
 
             const mapped = raw.map((m: any) => ({
                 id: m.id || m.mfrId || m.ManufacturerID || m.manufacturerId || '',
