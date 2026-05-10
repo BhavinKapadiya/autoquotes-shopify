@@ -5,6 +5,106 @@ import { AQProduct } from '../types';
 import { GoogleSheetsAdapter } from './GoogleSheetsAdapter';
 import { GoogleDriveAdapter } from './GoogleDriveAdapter';
 
+// ─── AQ-Native Auto-Grouping Helpers ─────────────────────────────────────────
+// These run INSIDE the sync pipeline for manufacturers that have no Google
+// Sheets variant mapping (e.g. True Mfg. – Specialty Display).
+
+const ZONE_LABELS: Record<string, string> = {
+    DZ: 'Dual Zone', R: 'Refrigerated', DC: 'Dry / Non-Refrigerated',
+    F: 'Freezer', DR: 'Dual Refrigerated',
+};
+
+const SERIES_LABELS: Record<string, string> = {
+    TDM: 'Display Merchandiser', TGM: 'Glass Merchandiser',
+    GDM: 'Glass Door Merchandiser', TFM: 'Floral Merchandiser',
+    TDC: 'Deli Case', THAC: 'Horizontal Air Curtain', TCGG: 'Counter Glass',
+    TVM: 'Vertical Merchandiser', G4SM: 'Four-Sided Merchandiser',
+};
+
+/** Extract the Base Model string (first 3 dash-segments for TDM/TGM, shorter for others) */
+function aqExtractBaseModel(mfrModel: string): string {
+    const parts = mfrModel.split('-');
+    // Pattern A: Series-Zone-Width  e.g. TDM-DZ-59-GE/GE-S-W
+    if (parts.length >= 3 && /^[A-Z]+$/.test(parts[1]) && /^\d/.test(parts[2])) {
+        return `${parts[0]}-${parts[1]}-${parts[2]}`;
+    }
+    // Pattern B: Series-Model  e.g. GDM-26F-HST-HC~TSL01  or  THAC-48-HC-LD
+    const SUFFIX = /^(HC|HST|LD|VM|TSL|RF|RTO|LS)\d*$/i;
+    const baseSegs: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+        if (i >= 2 && SUFFIX.test(parts[i])) break;
+        if (parts[i].includes('~')) break;
+        baseSegs.push(parts[i]);
+    }
+    return baseSegs.length >= 2 ? baseSegs.join('-') : `${parts[0]}-${parts[1]}`;
+}
+
+function aqNormalizeFinish(raw: string): string {
+    if (!raw) return 'Standard';
+    return raw.toLowerCase()
+        .replace(/^all\s+/, '')
+        .replace(/\s+exterior$/, '')
+        .trim()
+        .replace(/\b\w/g, (c: string) => c.toUpperCase());
+}
+
+function aqGetCV(cvArr: any[], ...names: string[]): string {
+    for (const name of names) {
+        const found = cvArr.find((cv: any) => cv.property?.toLowerCase() === name.toLowerCase());
+        if (found) return found.value || '';
+    }
+    return '';
+}
+
+function aqBuildFrontStyle(front: string, ends: string): string {
+    if (!front && !ends) return 'Standard';
+    if (!ends || ends.toLowerCase() === front.toLowerCase()) return toTitleCase(front);
+    const endsLabel = ends === 'glass' ? 'Glass Ends'
+        : ends === 'white' ? 'Solid White Sides'
+        : ends === 'black' ? 'Solid Black Sides'
+        : toTitleCase(ends);
+    return `${toTitleCase(front)} / ${endsLabel}`;
+}
+
+function toTitleCase(s: string): string {
+    return (s || '').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+function aqBuildTags(products: any[], baseModel: string): string[] {
+    const tags = new Set<string>();
+    const [seriesCode, zoneCode] = baseModel.split('-');
+    const zone   = ZONE_LABELS[zoneCode]   || zoneCode || '';
+    const series = SERIES_LABELS[seriesCode] || seriesCode || '';
+
+    products.forEach(p => {
+        const cat = p.productType || '';
+        if (cat)    tags.add(`category:${cat}`);
+        if (zone)   tags.add(`zone:${zone}`);
+        if (series) tags.add(`series:${seriesCode.toLowerCase()}`);
+
+        const w = p.productDimension?.productWidth || 0;
+        if (w) tags.add(`width:${Math.round(w)}in`);
+
+        const ext = aqGetCV(p.categoryValues || [], 'Exterior Finish', 'Cabinet Finish');
+        if (ext) tags.add(`finish:${aqNormalizeFinish(ext).toLowerCase()}`);
+
+        (p.certifications || []).forEach((c: string) =>
+            tags.add(`cert:${c.toLowerCase().replace(/\s+/g, '-')}`));
+
+        tags.add(`vendor:${(p.aqMfrName || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}`);
+        tags.add(`mfr-model-base:${baseModel.toLowerCase()}`);
+    });
+    return [...tags];
+}
+
+/** Returns true if this manufacturer should use AQ-native auto-grouping */
+function shouldUseAQGrouping(mfrName: string): boolean {
+    const AQ_GROUPED_MFRS = [
+        'true mfg. \u2013 specialty display',
+    ];
+    return AQ_GROUPED_MFRS.includes((mfrName || '').toLowerCase().trim());
+}
+
 export class SyncManager {
     private aqClient: AQClient;
     private shopifyClient: ShopifyClient;
@@ -367,6 +467,32 @@ export class SyncManager {
 
         console.log(`Grouped into ${groups.size} variant groups. ${ungroupedProducts.length} remain ungrouped.`);
 
+        // ── Partition ungrouped products: AQ-native-grouped vs legacy ─────────
+        const aqGroupedProducts: any[] = [];
+        const legacyUngrouped: any[] = [];
+
+        for (const p of ungroupedProducts) {
+            if (shouldUseAQGrouping(p.aqMfrName)) {
+                aqGroupedProducts.push(p);
+            } else {
+                legacyUngrouped.push(p);
+            }
+        }
+
+        // ── Build AQ-native groups by base model ──────────────────────────────
+        const aqGroups = new Map<string, any[]>();
+        for (const p of aqGroupedProducts) {
+            const base = aqExtractBaseModel(p.aqModelNumber);
+            if (!aqGroups.has(base)) aqGroups.set(base, []);
+            aqGroups.get(base)!.push(p);
+        }
+        if (aqGroups.size > 0) {
+            console.log(`\n🔬 AQ-native grouping: ${aqGroups.size} base models from ${aqGroupedProducts.length} SKUs`);
+            for (const [base, skus] of aqGroups) {
+                console.log(`   • ${base} → ${skus.length} SKU(s)`);
+            }
+        }
+
         // Process Grouped Products
         for (const [prefix, groupedProds] of groups) {
             try {
@@ -512,8 +638,152 @@ export class SyncManager {
             }
         }
 
+        // ── Process AQ-native grouped products (True Mfg. etc.) ──────────────
+        for (const [baseModel, skus] of aqGroups) {
+            try {
+                const parent = skus[0];
+
+                // Collect distinct option values
+                const exteriors  = new Set<string>();
+                const widths     = new Set<string>();
+                const frontStyles = new Set<string>();
+
+                skus.forEach((p: any) => {
+                    const cv  = p.categoryValues || [];
+                    const ext = aqGetCV(cv, 'Exterior Finish', 'Cabinet Finish', 'Finish');
+                    const fr  = aqGetCV(cv, 'Front', 'Door Style');
+                    const en  = aqGetCV(cv, 'Ends', 'Sides');
+                    const w   = p.productDimension?.productWidth;
+
+                    if (ext) exteriors.add(aqNormalizeFinish(ext));
+                    else     exteriors.add('Standard');
+                    if (w)   widths.add(`${w}"`);
+                    const fs = aqBuildFrontStyle(fr, en);
+                    if (fs && fs !== 'Standard') frontStyles.add(fs);
+                });
+
+                const extArr   = [...exteriors];
+                const widthArr = [...widths];
+                const frontArr = frontStyles.size > 0 ? [...frontStyles] : ['Standard'];
+
+                // Build variants
+                const shopifyVariants = skus.map((p: any) => {
+                    const cv  = p.categoryValues || [];
+                    const ext = aqGetCV(cv, 'Exterior Finish', 'Cabinet Finish', 'Finish');
+                    const fr  = aqGetCV(cv, 'Front', 'Door Style');
+                    const en  = aqGetCV(cv, 'Ends', 'Sides');
+                    const w   = p.productDimension?.productWidth;
+                    return {
+                        price:              p.finalPrice,
+                        compare_at_price:   p.listPrice > 0 ? p.listPrice : undefined,
+                        sku:                p.aqModelNumber,
+                        option1:            ext ? aqNormalizeFinish(ext) : 'Standard',
+                        option2:            w ? `${w}"` : 'Standard',
+                        option3:            aqBuildFrontStyle(fr, en) || 'Standard',
+                        inventory_management: null,
+                        weight:             p.productDimension?.shippingWeight || 0,
+                        weight_unit:        'lb',
+                    };
+                });
+
+                // Build tags (AQ-native + category rules)
+                let tags = aqBuildTags(skus, baseModel);
+                const parentProductType = parent.productType || '';
+                const exactRule = categoryRules.find((r: any) =>
+                    r.vendor.toLowerCase().trim() === (parent.aqMfrName || '').toLowerCase().trim() &&
+                    r.productType.toLowerCase().trim() === parentProductType.toLowerCase().trim()
+                );
+                if (exactRule) {
+                    if (exactRule.parentCategory) tags.push(`Category_${exactRule.parentCategory}`);
+                    if (exactRule.subCategory)    tags.push(`Sub_${exactRule.subCategory}`);
+                    if (exactRule.childCategory)  tags.push(`Child_${exactRule.childCategory}`);
+                }
+
+                // Build description
+                const descSpec = parent.descriptionHtml || '';
+                let bodyHtml = `<p>${descSpec}</p>`;
+                if (parent.categoryValues?.length > 0) {
+                    bodyHtml += `<h3>Specifications</h3><table border="1" cellpadding="5" style="border-collapse:collapse;width:100%"><tbody>`;
+                    parent.categoryValues.forEach((cv: any) => {
+                        bodyHtml += `<tr><td style="font-weight:bold">${cv.property}</td><td>${cv.value}</td></tr>`;
+                    });
+                    bodyHtml += `</tbody></table>`;
+                }
+
+                const [seriesCode, zoneCode] = baseModel.split('-');
+                const titleZone   = ZONE_LABELS[zoneCode]   || zoneCode || '';
+                const titleSeries = SERIES_LABELS[seriesCode] || seriesCode;
+                const titleWidth  = parent.productDimension?.productWidth ? `, ${Math.round(parent.productDimension.productWidth)}"` : '';
+
+                const handle = `true-mfg-${baseModel.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+                const shopifyData: any = {
+                    status:       'active',
+                    title:        `True ${baseModel} ${titleZone} ${titleSeries}${titleWidth}`,
+                    body_html:    bodyHtml,
+                    vendor:       parent.aqMfrName,
+                    product_type: parentProductType,
+                    tags:         [...new Set(tags)],
+                    handle,
+                    options: [
+                        { name: 'Exterior Finish' },
+                        { name: 'Width' },
+                        { name: 'Front Style' },
+                    ],
+                    variants: shopifyVariants,
+                    images:   parent.images || [],
+                    metafields: [
+                        { key: 'base_model',     value: baseModel,           type: 'single_line_text_field', namespace: 'true_mfg' },
+                        { key: 'series',         value: seriesCode,          type: 'single_line_text_field', namespace: 'true_mfg' },
+                        { key: 'zone',           value: titleZone,           type: 'single_line_text_field', namespace: 'true_mfg' },
+                        { key: 'aq_id',          value: parent.aqProductId,  type: 'single_line_text_field', namespace: 'true_mfg' },
+                        ...(parent.specSheetUrl ? [{ key: 'spec_sheet_url', value: parent.specSheetUrl, type: 'url', namespace: 'true_mfg' }] : []),
+                    ],
+                };
+
+                console.log(`\n📦 AQ-Sync: "${shopifyData.title}" | Variants: ${shopifyVariants.length} | Options: [${extArr.join('/')}] x [${widthArr.join('/')}]`);
+
+                // Ensure Smart Collections exist for this product type
+                if (parentProductType) {
+                    try { await this.shopifyClient.ensureSmartCollection(parentProductType, parentProductType); } catch (_) {}
+                }
+
+                // Push to Shopify
+                const existing = await this.shopifyClient.findProductByHandle(handle);
+                let shopifyId = '';
+                if (existing) {
+                    console.log(`   ↻ Updating existing Shopify product...`);
+                    const res = await this.shopifyClient.updateProduct(existing.id, shopifyData);
+                    shopifyId = res ? `${res.id}` : `${existing.id}`;
+                } else {
+                    console.log(`   ✚ Creating new Shopify product...`);
+                    const res = await this.shopifyClient.createProduct(shopifyData);
+                    shopifyId = res ? `${res.id}` : '';
+                }
+
+                // Mark all SKUs in this base model as synced
+                for (const p of skus) {
+                    p.status     = 'synced';
+                    p.shopifyId  = shopifyId;
+                    p.shopifyHandle = handle;
+                    p.lastSynced = new Date();
+                    await p.save();
+                }
+
+                console.log(`   ✅ Done — Shopify ID: ${shopifyId}`);
+
+            } catch (err: any) {
+                console.error(`❌ AQ-Sync failed for base model "${baseModel}":`, err?.message || err);
+                for (const p of skus) {
+                    p.status    = 'error';
+                    p.syncError = err?.message || JSON.stringify(err);
+                    await p.save();
+                }
+            }
+        }
+
         // Process Ungrouped Products (Legacy Logic)
-        for (const product of ungroupedProducts) {
+        for (const product of legacyUngrouped) {
             try {
                 // Construct Body HTML
                 let bodyHtml = `<p>${product.aqMfrName} ${product.aqModelNumber}</p>`;
