@@ -464,6 +464,11 @@ export class SyncManager {
         const ungroupedProducts = [];
 
         for (const product of productsToSync) {
+            // AQ-native manufacturers bypass Google Sheets entirely
+            if (shouldUseAQGrouping(product.aqMfrName)) {
+                ungroupedProducts.push(product);
+                continue;
+            }
             const mapping = variantMappings.get(product.aqModelNumber);
             if (mapping) {
                 const prefix = mapping.prefix;
