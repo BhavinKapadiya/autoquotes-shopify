@@ -269,16 +269,28 @@ export default function ManufacturerConfigPage() {
               <div className="space-y-4">
                 {[1, 2, 3].map((num) => {
                   const fieldName = `variantOption${num}Source` as keyof MfrConfig;
+                  const savedValue = config[fieldName] as string;
+                  
+                  // Check if we need to manually inject the saved option because the profile isn't loaded yet
+                  const needsManualOption = savedValue && 
+                    savedValue !== 'productDimension.productWidth' && 
+                    (!profile || !profile.categoryValueKeys.includes(savedValue));
+
                   return (
                     <div key={num}>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Option {num}</label>
                       <select
-                        value={(config[fieldName] as string) || ''}
+                        value={savedValue || ''}
                         onChange={e => setConfig({ ...config, [fieldName]: e.target.value })}
                         className="w-full border-gray-300 rounded-md shadow-sm p-2 border"
                       >
                         <option value="">-- None --</option>
                         <option value="productDimension.productWidth">Width (Dimensions)</option>
+                        
+                        {needsManualOption && (
+                          <option value={savedValue}>{savedValue} (Saved)</option>
+                        )}
+
                         {profile?.categoryValueKeys.map(key => (
                           <option key={key} value={key}>{key} (Spec)</option>
                         ))}

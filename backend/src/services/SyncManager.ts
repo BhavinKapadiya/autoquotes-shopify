@@ -4,105 +4,37 @@ import { PricingEngine } from './PricingEngine';
 import { AQProduct } from '../types';
 import { GoogleSheetsAdapter } from './GoogleSheetsAdapter';
 import { GoogleDriveAdapter } from './GoogleDriveAdapter';
+import ManufacturerConfig, { IManufacturerConfig } from '../models/ManufacturerConfig';
 
-// ─── AQ-Native Auto-Grouping Helpers ─────────────────────────────────────────
-// These run INSIDE the sync pipeline for manufacturers that have no Google
-// Sheets variant mapping (e.g. True Mfg. – Specialty Display).
+// ─── Dynamic AI Config Helpers ───────────────────────────────────────────────
 
-const ZONE_LABELS: Record<string, string> = {
-    DZ: 'Dual Zone', R: 'Refrigerated', DC: 'Dry / Non-Refrigerated',
-    F: 'Freezer', DR: 'Dual Refrigerated',
-};
-
-const SERIES_LABELS: Record<string, string> = {
-    TDM: 'Display Merchandiser', TGM: 'Glass Merchandiser',
-    GDM: 'Glass Door Merchandiser', TFM: 'Floral Merchandiser',
-    TDC: 'Deli Case', THAC: 'Horizontal Air Curtain', TCGG: 'Counter Glass',
-    TVM: 'Vertical Merchandiser', G4SM: 'Four-Sided Merchandiser',
-};
-
-/** Extract the Base Model string (first 3 dash-segments for TDM/TGM, shorter for others) */
-function aqExtractBaseModel(mfrModel: string): string {
-    const parts = mfrModel.split('-');
-    // Pattern A: Series-Zone-Width  e.g. TDM-DZ-59-GE/GE-S-W
-    if (parts.length >= 3 && /^[A-Z]+$/.test(parts[1]) && /^\d/.test(parts[2])) {
-        return `${parts[0]}-${parts[1]}-${parts[2]}`;
+function resolveVariantOption(product: any, source?: string): string {
+    if (!source) return 'Standard';
+    if (source === 'productDimension.productWidth') {
+        const w = product.productDimension?.productWidth;
+        return w ? `${Math.round(w)}"` : 'Standard';
     }
-    // Pattern B: Series-Model  e.g. GDM-26F-HST-HC~TSL01  or  THAC-48-HC-LD
-    const SUFFIX = /^(HC|HST|LD|VM|TSL|RF|RTO|LS)\d*$/i;
-    const baseSegs: string[] = [];
-    for (let i = 0; i < parts.length; i++) {
-        if (i >= 2 && SUFFIX.test(parts[i])) break;
-        if (parts[i].includes('~')) break;
-        baseSegs.push(parts[i]);
+    // Search in categoryValues
+    const cvArr = product.categoryValues || [];
+    const found = cvArr.find((cv: any) => cv.property?.toLowerCase() === source.toLowerCase());
+    if (found && found.value) {
+        return found.value.replace(/^all\s+/i, '').replace(/\s+exterior$/i, '').trim()
+            .replace(/\b\w/g, (c: string) => c.toUpperCase());
     }
-    return baseSegs.length >= 2 ? baseSegs.join('-') : `${parts[0]}-${parts[1]}`;
+    return 'Standard';
 }
 
-function aqNormalizeFinish(raw: string): string {
-    if (!raw) return 'Standard';
-    return raw.toLowerCase()
-        .replace(/^all\s+/, '')
-        .replace(/\s+exterior$/, '')
-        .trim()
-        .replace(/\b\w/g, (c: string) => c.toUpperCase());
-}
-
-function aqGetCV(cvArr: any[], ...names: string[]): string {
-    for (const name of names) {
-        const found = cvArr.find((cv: any) => cv.property?.toLowerCase() === name.toLowerCase());
-        if (found) return found.value || '';
+function extractDynamicBaseModel(modelNumber: string, regexPattern?: string): string {
+    if (regexPattern) {
+        try {
+            const regex = new RegExp(regexPattern, 'i');
+            const match = modelNumber.match(regex);
+            if (match && match[1]) return match[1];
+        } catch (e) {
+            console.warn(`Invalid regex pattern: ${regexPattern}`);
+        }
     }
-    return '';
-}
-
-function aqBuildFrontStyle(front: string, ends: string): string {
-    if (!front && !ends) return 'Standard';
-    if (!ends || ends.toLowerCase() === front.toLowerCase()) return toTitleCase(front);
-    const endsLabel = ends === 'glass' ? 'Glass Ends'
-        : ends === 'white' ? 'Solid White Sides'
-        : ends === 'black' ? 'Solid Black Sides'
-        : toTitleCase(ends);
-    return `${toTitleCase(front)} / ${endsLabel}`;
-}
-
-function toTitleCase(s: string): string {
-    return (s || '').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-}
-
-function aqBuildTags(products: any[], baseModel: string): string[] {
-    const tags = new Set<string>();
-    const [seriesCode, zoneCode] = baseModel.split('-');
-    const zone   = ZONE_LABELS[zoneCode]   || zoneCode || '';
-    const series = SERIES_LABELS[seriesCode] || seriesCode || '';
-
-    products.forEach(p => {
-        const cat = p.productType || '';
-        if (cat)    tags.add(`category:${cat}`);
-        if (zone)   tags.add(`zone:${zone}`);
-        if (series) tags.add(`series:${seriesCode.toLowerCase()}`);
-
-        const w = p.productDimension?.productWidth || 0;
-        if (w) tags.add(`width:${Math.round(w)}in`);
-
-        const ext = aqGetCV(p.categoryValues || [], 'Exterior Finish', 'Cabinet Finish');
-        if (ext) tags.add(`finish:${aqNormalizeFinish(ext).toLowerCase()}`);
-
-        (p.certifications || []).forEach((c: string) =>
-            tags.add(`cert:${c.toLowerCase().replace(/\s+/g, '-')}`));
-
-        tags.add(`vendor:${(p.aqMfrName || '').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}`);
-        tags.add(`mfr-model-base:${baseModel.toLowerCase()}`);
-    });
-    return [...tags];
-}
-
-/** Returns true if this manufacturer should use AQ-native auto-grouping */
-function shouldUseAQGrouping(mfrName: string): boolean {
-    const AQ_GROUPED_MFRS = [
-        'true mfg. \u2013 specialty display',
-    ];
-    return AQ_GROUPED_MFRS.includes((mfrName || '').toLowerCase().trim());
+    return modelNumber.split('-').slice(0, 2).join('-');
 }
 
 export class SyncManager {
@@ -420,7 +352,6 @@ export class SyncManager {
     async syncToShopify(specificProductId?: string) {
         console.log('Starting SYNC to Shopify...');
         const Product = require('../models/Product').default;
-        const CategoryRule = require('../models/CategoryRule').default;
         const { VariantGroupAdapter } = require('./VariantGroupAdapter');
 
         let productsToSync = [];
@@ -437,20 +368,23 @@ export class SyncManager {
 
         console.log(`Found ${productsToSync.length} products to sync.`);
 
-        // Fetch Category Rules
-        const categoryRules = await CategoryRule.find();
+        // Fetch AI Configurations
+        const mfrConfigs = await ManufacturerConfig.find();
+        const configMap = new Map<string, IManufacturerConfig>();
+        mfrConfigs.forEach(c => configMap.set(c.mfrName.toLowerCase().trim(), c));
 
-        // Ensure Smart Collections Exist Before Processing
+        // Ensure Smart Collections Exist for mapped categories
         if (this.shopifyClient) {
-            console.log('📋 Ensuring Smart Collections exist for all Category Rules...');
-            for (const r of categoryRules) {
-                try {
-                    if (r.productType) await this.shopifyClient.ensureSmartCollection(r.productType, r.productType);
-                    if (r.parentCategory) await this.shopifyClient.ensureSmartCollection(r.parentCategory, `Category_${r.parentCategory}`);
-                    if (r.subCategory) await this.shopifyClient.ensureSmartCollection(r.subCategory, `Sub_${r.subCategory}`);
-                    if (r.childCategory) await this.shopifyClient.ensureSmartCollection(r.childCategory, `Child_${r.childCategory}`);
-                } catch (collectionErr: any) {
-                    console.error(`⚠️ Failed to create collection for rule ${r.vendor} - ${r.productType}:`, collectionErr.message);
+            console.log('📋 Ensuring Smart Collections exist for Category Mappings...');
+            for (const config of mfrConfigs) {
+                for (const mapping of config.categoryMappings) {
+                    try {
+                        if (mapping.shopifyCollection) {
+                            await this.shopifyClient.ensureSmartCollection(mapping.shopifyCollection, `${mapping.tagsToApply[0] || mapping.shopifyCollection}`);
+                        }
+                    } catch (collectionErr: any) {
+                        console.error(`⚠️ Failed to create collection ${mapping.shopifyCollection}: ${collectionErr.message}`);
+                    }
                 }
             }
         }
@@ -464,8 +398,9 @@ export class SyncManager {
         const ungroupedProducts = [];
 
         for (const product of productsToSync) {
-            // AQ-native manufacturers bypass Google Sheets entirely
-            if (shouldUseAQGrouping(product.aqMfrName)) {
+            // AI-native manufacturers bypass Google Sheets entirely
+            const config = configMap.get((product.aqMfrName || '').toLowerCase().trim());
+            if (config?.groupingStrategy === 'AQ_REGEX') {
                 ungroupedProducts.push(product);
                 continue;
             }
@@ -486,7 +421,8 @@ export class SyncManager {
         const legacyUngrouped: any[] = [];
 
         for (const p of ungroupedProducts) {
-            if (shouldUseAQGrouping(p.aqMfrName)) {
+            const config = configMap.get((p.aqMfrName || '').toLowerCase().trim());
+            if (config?.groupingStrategy === 'AQ_REGEX') {
                 aqGroupedProducts.push(p);
             } else {
                 legacyUngrouped.push(p);
@@ -496,7 +432,8 @@ export class SyncManager {
         // ── Build AQ-native groups by base model ──────────────────────────────
         const aqGroups = new Map<string, any[]>();
         for (const p of aqGroupedProducts) {
-            const base = aqExtractBaseModel(p.aqModelNumber);
+            const config = configMap.get((p.aqMfrName || '').toLowerCase().trim());
+            const base = extractDynamicBaseModel(p.aqModelNumber, config?.regexPattern);
             if (!aqGroups.has(base)) aqGroups.set(base, []);
             aqGroups.get(base)!.push(p);
         }
@@ -528,60 +465,18 @@ export class SyncManager {
                     bodyHtml += `</tbody></table>`;
                 }
 
-                // Inject Category Tags (case-insensitive match to handle vendor/productType casing differences)
+                // Inject Category Tags using AI Config
                 let tags = parentProduct.tags ? [...parentProduct.tags] : [];
                 
-                // 1. Existing Logic: Exact match on productType
-                const exactRule = categoryRules.find((r: any) =>
-                    r.vendor.toLowerCase().trim() === (parentProduct.aqMfrName || '').toLowerCase().trim() &&
-                    r.productType.toLowerCase().trim() === (parentProduct.productType || '').toLowerCase().trim()
-                );
-                if (exactRule) {
-                    console.log(`🏷️  Applying category tags for ${parentProduct.aqMfrName} / ${parentProduct.productType}: ${exactRule.parentCategory} > ${exactRule.subCategory} > ${exactRule.childCategory}`);
-                    const cTags = [`Category_${exactRule.parentCategory}`, `Sub_${exactRule.subCategory}`, `Child_${exactRule.childCategory}`];
-                    cTags.forEach(t => { if (!tags.includes(t)) tags.push(t); });
-                } else {
-                    console.log(`ℹ️  No category rule found for exact match: "${parentProduct.aqMfrName}" / "${parentProduct.productType}"`);
-                }
-
-                // 2. New Logic: Dynamic Keyword Scanning (Title, Product Type, Description)
-                const searchableText = [
-                    parentProduct.title || '',
-                    parentProduct.productType || '',
-                    (parentProduct.descriptionHtml || '').replace(/<[^>]*>?/gm, ' ')
-                ].join(' ').toLowerCase();
-
-                const vendorRules = categoryRules.filter((r: any) => 
-                    r.vendor.toLowerCase().trim() === (parentProduct.aqMfrName || '').toLowerCase().trim()
-                );
-                
-                for (const r of vendorRules) {
-                    const keyword = r.productType.toLowerCase().trim();
-                    const subKeyword = (r.subCategory || '').toLowerCase().trim();
-                    const childKeyword = (r.childCategory || '').toLowerCase().trim();
-
-                    if (keyword && searchableText.includes(keyword)) {
-                        // Apply the keyword tag
-                        if (!tags.includes(r.productType)) {
-                            tags.push(r.productType);
-                            console.log(`🔍 Keyword "${r.productType}" found in product text! Applied tag to ${parentProduct.aqModelNumber}`);
-                        }
-                        // Apply the hierarchy tags
-                        if (r.parentCategory && !tags.includes(`Category_${r.parentCategory}`)) tags.push(`Category_${r.parentCategory}`);
-                        if (r.subCategory && !tags.includes(`Sub_${r.subCategory}`)) tags.push(`Sub_${r.subCategory}`);
-                        if (r.childCategory && !tags.includes(`Child_${r.childCategory}`)) tags.push(`Child_${r.childCategory}`);
-                    }
-
-                    // Independent check for Sub Category keyword
-                    if (subKeyword && searchableText.includes(subKeyword) && !tags.includes(r.subCategory)) {
-                        tags.push(r.subCategory);
-                        console.log(`🔍 Sub-Category Keyword "${r.subCategory}" found! Applied raw tag to ${parentProduct.aqModelNumber}`);
-                    }
-
-                    // Independent check for Child Category keyword
-                    if (childKeyword && searchableText.includes(childKeyword) && !tags.includes(r.childCategory)) {
-                        tags.push(r.childCategory);
-                        console.log(`🔍 Child-Category Keyword "${r.childCategory}" found! Applied raw tag to ${parentProduct.aqModelNumber}`);
+                const config = configMap.get((parentProduct.aqMfrName || '').toLowerCase().trim());
+                if (config && config.categoryMappings) {
+                    const productType = parentProduct.productType || '';
+                    const mapping = config.categoryMappings.find(m => m.aqProductType.toLowerCase() === productType.toLowerCase());
+                    if (mapping && mapping.tagsToApply) {
+                        tags.push(...mapping.tagsToApply);
+                        console.log(`🏷️  Applying AI config tags for ${parentProduct.aqMfrName} / ${productType}: ${mapping.tagsToApply.join(', ')}`);
+                    } else {
+                        console.log(`ℹ️  No AI config mapping found for: "${parentProduct.aqMfrName}" / "${productType}"`);
                     }
                 }
 
@@ -644,7 +539,11 @@ export class SyncManager {
                 }
 
             } catch (err: any) {
-                console.error(`Failed to sync group ${prefix} to Shopify:`, err);
+                console.error(`❌ Google Sheets Sync failed for group "${prefix}"!`);
+                console.error(`Error Message:`, err?.message || err);
+                if (err?.response?.body) console.error(`Shopify API Response:`, JSON.stringify(err.response.body, null, 2));
+                else if (err?.response?.data) console.error(`Shopify API Response:`, JSON.stringify(err.response.data, null, 2));
+                
                 for (const prod of groupedProds) {
                     prod.status = 'error';
                     prod.syncError = JSON.stringify(err);
@@ -658,60 +557,30 @@ export class SyncManager {
             try {
                 const parent = skus[0];
 
-                // Collect distinct option values
-                const exteriors  = new Set<string>();
-                const widths     = new Set<string>();
-                const frontStyles = new Set<string>();
-
-                skus.forEach((p: any) => {
-                    const cv  = p.categoryValues || [];
-                    const ext = aqGetCV(cv, 'Exterior Finish', 'Cabinet Finish', 'Finish');
-                    const fr  = aqGetCV(cv, 'Front', 'Door Style');
-                    const en  = aqGetCV(cv, 'Ends', 'Sides');
-                    const w   = p.productDimension?.productWidth;
-
-                    if (ext) exteriors.add(aqNormalizeFinish(ext));
-                    else     exteriors.add('Standard');
-                    if (w)   widths.add(`${w}"`);
-                    const fs = aqBuildFrontStyle(fr, en);
-                    if (fs && fs !== 'Standard') frontStyles.add(fs);
-                });
-
-                const extArr   = [...exteriors];
-                const widthArr = [...widths];
-                const frontArr = frontStyles.size > 0 ? [...frontStyles] : ['Standard'];
-
+                // Collect distinct option values (not strictly necessary for Shopify mapping but helpful if needed)
+                const config = configMap.get((parent.aqMfrName || '').toLowerCase().trim());
+                
                 // Build variants
                 const shopifyVariants = skus.map((p: any) => {
-                    const cv  = p.categoryValues || [];
-                    const ext = aqGetCV(cv, 'Exterior Finish', 'Cabinet Finish', 'Finish');
-                    const fr  = aqGetCV(cv, 'Front', 'Door Style');
-                    const en  = aqGetCV(cv, 'Ends', 'Sides');
-                    const w   = p.productDimension?.productWidth;
                     return {
                         price:              p.finalPrice,
                         compare_at_price:   p.listPrice > 0 ? p.listPrice : undefined,
                         sku:                p.aqModelNumber,
-                        option1:            ext ? aqNormalizeFinish(ext) : 'Standard',
-                        option2:            w ? `${w}"` : 'Standard',
-                        option3:            aqBuildFrontStyle(fr, en) || 'Standard',
+                        option1:            resolveVariantOption(p, config?.variantOption1Source),
+                        option2:            resolveVariantOption(p, config?.variantOption2Source),
+                        option3:            resolveVariantOption(p, config?.variantOption3Source),
                         inventory_management: null,
                         weight:             p.productDimension?.shippingWeight || 0,
                         weight_unit:        'lb',
                     };
                 });
 
-                // Build tags (AQ-native + category rules)
-                let tags = aqBuildTags(skus, baseModel);
+                // Build tags using DB mapping
+                let tags: string[] = [];
                 const parentProductType = parent.productType || '';
-                const exactRule = categoryRules.find((r: any) =>
-                    r.vendor.toLowerCase().trim() === (parent.aqMfrName || '').toLowerCase().trim() &&
-                    r.productType.toLowerCase().trim() === parentProductType.toLowerCase().trim()
-                );
-                if (exactRule) {
-                    if (exactRule.parentCategory) tags.push(`Category_${exactRule.parentCategory}`);
-                    if (exactRule.subCategory)    tags.push(`Sub_${exactRule.subCategory}`);
-                    if (exactRule.childCategory)  tags.push(`Child_${exactRule.childCategory}`);
+                const mapping = config?.categoryMappings?.find(m => m.aqProductType.toLowerCase() === parentProductType.toLowerCase());
+                if (mapping && mapping.tagsToApply) {
+                    tags.push(...mapping.tagsToApply);
                 }
 
                 // Build description
@@ -725,38 +594,30 @@ export class SyncManager {
                     bodyHtml += `</tbody></table>`;
                 }
 
-                const [seriesCode, zoneCode] = baseModel.split('-');
-                const titleZone   = ZONE_LABELS[zoneCode]   || zoneCode || '';
-                const titleSeries = SERIES_LABELS[seriesCode] || seriesCode;
-                const titleWidth  = parent.productDimension?.productWidth ? `, ${Math.round(parent.productDimension.productWidth)}"` : '';
-
-                const handle = `true-mfg-${baseModel.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+                const handle = `${parent.aqMfrName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${baseModel.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
                 const shopifyData: any = {
                     status:       'active',
-                    title:        `True ${baseModel} ${titleZone} ${titleSeries}${titleWidth}`,
+                    title:        `${parent.aqMfrName} ${baseModel} ${parent.productType || ''}`.trim(),
                     body_html:    bodyHtml,
                     vendor:       parent.aqMfrName,
                     product_type: parentProductType,
                     tags:         [...new Set(tags)],
                     handle,
                     options: [
-                        { name: 'Exterior Finish' },
-                        { name: 'Width' },
-                        { name: 'Front Style' },
+                        { name: config?.variantOption1Source || 'Option 1' },
+                        { name: config?.variantOption2Source || 'Option 2' },
+                        { name: config?.variantOption3Source || 'Option 3' },
                     ],
                     variants: shopifyVariants,
                     images:   parent.images || [],
                     metafields: [
-                        { key: 'base_model',     value: baseModel,           type: 'single_line_text_field', namespace: 'true_mfg' },
-                        { key: 'series',         value: seriesCode,          type: 'single_line_text_field', namespace: 'true_mfg' },
-                        { key: 'zone',           value: titleZone,           type: 'single_line_text_field', namespace: 'true_mfg' },
-                        { key: 'aq_id',          value: parent.aqProductId,  type: 'single_line_text_field', namespace: 'true_mfg' },
-                        ...(parent.specSheetUrl ? [{ key: 'spec_sheet_url', value: parent.specSheetUrl, type: 'url', namespace: 'true_mfg' }] : []),
+                        { key: 'base_model',     value: baseModel,           type: 'single_line_text_field', namespace: 'custom' },
+                        { key: 'aq_id',          value: parent.aqProductId,  type: 'single_line_text_field', namespace: 'custom' },
                     ],
                 };
 
-                console.log(`\n📦 AQ-Sync: "${shopifyData.title}" | Variants: ${shopifyVariants.length} | Options: [${extArr.join('/')}] x [${widthArr.join('/')}]`);
+                console.log(`\n📦 AQ-Sync: "${shopifyData.title}" | Variants: ${shopifyVariants.length}`);
 
                 // Ensure Smart Collections exist for this product type
                 if (parentProductType) {
@@ -788,7 +649,11 @@ export class SyncManager {
                 console.log(`   ✅ Done — Shopify ID: ${shopifyId}`);
 
             } catch (err: any) {
-                console.error(`❌ AQ-Sync failed for base model "${baseModel}":`, err?.message || err);
+                console.error(`❌ AQ-native Sync failed for base model "${baseModel}"!`);
+                console.error(`Error Message:`, err?.message || err);
+                if (err?.response?.body) console.error(`Shopify API Response:`, JSON.stringify(err.response.body, null, 2));
+                else if (err?.response?.data) console.error(`Shopify API Response:`, JSON.stringify(err.response.data, null, 2));
+                
                 for (const p of skus) {
                     p.status    = 'error';
                     p.syncError = err?.message || JSON.stringify(err);
@@ -815,60 +680,18 @@ export class SyncManager {
                     bodyHtml += `</tbody></table>`;
                 }
 
-                // Inject Category Tags (case-insensitive match to handle vendor/productType casing differences)
+                // Inject Category Tags using AI Config
                 let tags = product.tags ? [...product.tags] : [];
                 
-                // 1. Existing Logic: Exact match on productType
-                const exactRule = categoryRules.find((r: any) =>
-                    r.vendor.toLowerCase().trim() === (product.aqMfrName || '').toLowerCase().trim() &&
-                    r.productType.toLowerCase().trim() === (product.productType || '').toLowerCase().trim()
-                );
-                if (exactRule) {
-                    console.log(`🏷️  Applying category tags for ${product.aqMfrName} / ${product.productType}: ${exactRule.parentCategory} > ${exactRule.subCategory} > ${exactRule.childCategory}`);
-                    const cTags = [`Category_${exactRule.parentCategory}`, `Sub_${exactRule.subCategory}`, `Child_${exactRule.childCategory}`];
-                    cTags.forEach(t => { if (!tags.includes(t)) tags.push(t); });
-                } else {
-                    console.log(`ℹ️  No category rule found for exact match: "${product.aqMfrName}" / "${product.productType}"`);
-                }
-
-                // 2. New Logic: Dynamic Keyword Scanning (Title, Product Type, Description)
-                const searchableText = [
-                    product.title || '',
-                    product.productType || '',
-                    (product.descriptionHtml || '').replace(/<[^>]*>?/gm, ' ')
-                ].join(' ').toLowerCase();
-
-                const vendorRules = categoryRules.filter((r: any) => 
-                    r.vendor.toLowerCase().trim() === (product.aqMfrName || '').toLowerCase().trim()
-                );
-                
-                for (const r of vendorRules) {
-                    const keyword = r.productType.toLowerCase().trim();
-                    const subKeyword = (r.subCategory || '').toLowerCase().trim();
-                    const childKeyword = (r.childCategory || '').toLowerCase().trim();
-
-                    if (keyword && searchableText.includes(keyword)) {
-                        // Apply the keyword tag
-                        if (!tags.includes(r.productType)) {
-                            tags.push(r.productType);
-                            console.log(`🔍 Keyword "${r.productType}" found in product text! Applied tag to ${product.aqModelNumber}`);
-                        }
-                        // Apply the hierarchy tags
-                        if (r.parentCategory && !tags.includes(`Category_${r.parentCategory}`)) tags.push(`Category_${r.parentCategory}`);
-                        if (r.subCategory && !tags.includes(`Sub_${r.subCategory}`)) tags.push(`Sub_${r.subCategory}`);
-                        if (r.childCategory && !tags.includes(`Child_${r.childCategory}`)) tags.push(`Child_${r.childCategory}`);
-                    }
-
-                    // Independent check for Sub Category keyword
-                    if (subKeyword && searchableText.includes(subKeyword) && !tags.includes(r.subCategory)) {
-                        tags.push(r.subCategory);
-                        console.log(`🔍 Sub-Category Keyword "${r.subCategory}" found! Applied raw tag to ${product.aqModelNumber}`);
-                    }
-
-                    // Independent check for Child Category keyword
-                    if (childKeyword && searchableText.includes(childKeyword) && !tags.includes(r.childCategory)) {
-                        tags.push(r.childCategory);
-                        console.log(`🔍 Child-Category Keyword "${r.childCategory}" found! Applied raw tag to ${product.aqModelNumber}`);
+                const config = configMap.get((product.aqMfrName || '').toLowerCase().trim());
+                if (config && config.categoryMappings) {
+                    const productType = product.productType || '';
+                    const mapping = config.categoryMappings.find(m => m.aqProductType.toLowerCase() === productType.toLowerCase());
+                    if (mapping && mapping.tagsToApply) {
+                        tags.push(...mapping.tagsToApply);
+                        console.log(`🏷️  Applying AI config tags for ${product.aqMfrName} / ${productType}: ${mapping.tagsToApply.join(', ')}`);
+                    } else {
+                        console.log(`ℹ️  No AI config mapping found for: "${product.aqMfrName}" / "${productType}"`);
                     }
                 }
 
@@ -967,7 +790,11 @@ export class SyncManager {
                 await product.save();
 
             } catch (err: any) {
-                console.error(`Failed to sync ${product.aqModelNumber} to Shopify:`, err);
+                console.error(`❌ Legacy Sync failed for model "${product.aqModelNumber}"!`);
+                console.error(`Error Message:`, err?.message || err);
+                if (err?.response?.body) console.error(`Shopify API Response:`, JSON.stringify(err.response.body, null, 2));
+                else if (err?.response?.data) console.error(`Shopify API Response:`, JSON.stringify(err.response.data, null, 2));
+                
                 product.status = 'error';
                 product.syncError = JSON.stringify(err);
                 await product.save();
