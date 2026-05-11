@@ -24,6 +24,7 @@
     "googleapis": "^169.0.0",
     "mongoose": "^9.1.4",
     "multer": "^2.0.2",
+    "openai": "^6.37.0",
     "papaparse": "^5.5.3",
     "shopify-api-node": "^3.12.1",
     "uuid": "^9.0.1"
